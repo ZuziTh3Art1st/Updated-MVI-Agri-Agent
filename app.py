@@ -7,82 +7,105 @@ import The_Database as db
 
 # ================= PAGE CONFIG & STYLING =================
 st.set_page_config(
-    page_title="Seed2Harvest Enterprise",
+    page_title="Seed 2 Harvest | Strategic Agent",
+    page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Professional Enterprise Agricultural Theme CSS
+# Dark Theme & Gold Accent CSS matching the original UI
 st.markdown("""
 <style>
-    /* Global Base */
-    .main { background-color: #F8FAF8; }
-    .stAppHeader { background-color: transparent; }
-    
-    /* Typography & Core Elements */
-    h1, h2, h3, h4, h5, h6 { color: #1E3F20 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    
-    /* Hero Banner */
-    .hero-banner {
-        background: linear-gradient(135deg, #1E3F20 0%, #2C5E30 100%);
-        padding: 32px;
-        border-radius: 8px;
-        color: white;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    /* Force dark theme colors */
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
     }
-    .hero-banner h1 { color: #FFFFFF !important; margin: 0; font-size: 2.4rem; font-weight: 600; letter-spacing: -0.5px; }
-    .hero-banner p { color: #E8F5E9; margin: 8px 0 0 0; font-size: 1.1rem; font-weight: 300; }
     
-    /* Image Showcase/Carousel */
-    .image-showcase {
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* Headers and Text */
+    h1, h2, h3 {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+    .main-title { color: #ffffff; font-size: 3rem; line-height: 1.1; margin-bottom: 0px; margin-top: 20px;}
+    .sub-title { color: #c69c6d; font-size: 1rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 30px;}
+    .section-header { color: #c69c6d; font-size: 1.5rem; margin-top: 30px; margin-bottom: 15px;}
+    
+    /* Input Fields */
+    .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
+        background-color: #1e2127;
+        color: #ffffff;
+        border: 1px solid #333333;
+    }
+    .stTextInput > div > div > input:focus { border-color: #c69c6d; box-shadow: none; }
+    
+    /* Warning Box */
+    .custom-warning {
+        background-color: #3b4020;
+        color: #d7ffd9;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+        font-size: 0.95rem;
+    }
+    
+    /* Quote */
+    .quote-text {
+        color: #c69c6d;
+        font-style: italic;
         margin-bottom: 20px;
     }
     
-    /* Cards & Metrics */
-    .metric-card {
-        background: #FFFFFF;
-        padding: 20px;
-        border-radius: 8px;
-        border-left: 4px solid #2C5E30;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        margin-bottom: 16px;
-    }
-    .metric-card h4 { margin-top: 0; font-size: 1.1rem; color: #1E3F20; }
-    
-    /* Sidebar Styling */
-    [data-testid="stSidebar"] {
-        background-color: #FFFFFF;
-        border-right: 1px solid #E0E0E0;
-    }
-    .sidebar-title { color: #1E3F20; font-weight: 600; font-size: 1.2rem; margin-bottom: 16px; }
-    
-    /* Badges */
-    .badge-popia {
-        display: inline-block;
-        background-color: #E8F5E9;
-        color: #1E3F20;
-        padding: 6px 12px;
+    /* Buttons */
+    .stButton > button {
+        background-color: #1e2127;
+        color: #ffffff;
+        border: 1px solid #c69c6d;
         border-radius: 4px;
-        font-size: 0.85rem;
         font-weight: 600;
-        border: 1px solid #C8E6C9;
-        margin-top: 12px;
+        letter-spacing: 1px;
     }
+    .stButton > button:hover {
+        background-color: #c69c6d;
+        color: #000000;
+        border: 1px solid #c69c6d;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #16181c;
+        border-right: 1px solid #333;
+    }
+    .sidebar-title { color: #c69c6d; font-size: 1.2rem; font-weight: bold; margin-bottom: 20px;}
+    .sidebar-subtitle { color: #888888; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 10px;}
+    
+    /* Footer */
+    .footer {
+        text-align: center;
+        margin-top: 50px;
+        padding-top: 20px;
+        border-top: 1px solid #333;
+    }
+    .footer h4 { color: #c69c6d; margin: 0; font-size: 1.2rem; letter-spacing: 2px;}
+    .footer p { color: #666666; font-size: 0.8rem; letter-spacing: 1px; margin-top: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
 # Initialize database tables
 db.init_db()
 
+# ================= SESSION STATE =================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "user_data" not in st.session_state:
+    st.session_state.user_data = {"name": "", "farm": "", "location": ""}
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 # ================= APPLICATION MIDDLEWARE =================
 class AgriculturalMiddleware:
-    """
-    EA Application Layer: Input Boundary Guardrail & Dialect Normalization
-    """
+    """EA Application Layer: Input Boundary Guardrail & Dialect Normalization"""
     AGRICULTURAL_KEYWORDS = [
         "soil", "plant", "crop", "fertilizer", "fertiliser", "seed", "harvest", 
         "pest", "leaf", "growth", "water", "yield", "nutrient", "fungus", 
@@ -90,7 +113,6 @@ class AgriculturalMiddleware:
         "bioboost", "hydrocache", "nitro", "bioshield", "ecocert"
     ]
     
-    # Regional Vernacular & South African Farming Slang Dictionary
     SLANG_DICTIONARY = {
         r"\bblaarbrand\b": "leaf scorch / fungal burn",
         r"\bkunsmis\b": "organic fertilizer",
@@ -135,118 +157,119 @@ catalog_context = "\n".join([
 ])
 
 SYSTEM_PROMPT = f"""
-You are the Seed2Harvest Agricultural Technical Consultant and Sales AI Agent.
-SMME Partner: Shaun Cairns (Seed2Harvest, Cape Town, South Africa).
+You are the Seed 2 Harvest Strategic Agent.
+SMME Partner: Shaun Cairns (Cape Town, South Africa).
 
 STRICT BOUNDARY CONSTRAINTS:
-1. Ground your advice exclusively in Seed2Harvest's certified product catalog and verified organic agronomy:
+1. Ground your advice exclusively in the certified product catalog:
 {catalog_context}
-2. Never invent unverified chemical formulations or excessive dosages. Respect ECOCERT safety limits.
-3. If a farmer asks for chemical remedies that harm biological soil life, gently steer them toward our organic biological alternatives.
-4. When a farmer indicates intent to purchase, guide them clearly on the exact quantity and unit price.
-5. Tone: Professional, respectful, practical, supportive of commercial and smallholder farmers. Keep responses concise. Do not use emojis.
+2. Never invent unverified formulations. Respect ECOCERT safety limits.
+3. Steer farmers toward organic biological alternatives.
+4. Keep responses concise, professional, and action-oriented. Do not use emojis.
 """
 
-# ================= SIDEBAR & NAVIGATION =================
+# ================= SIDEBAR NAVIGATION =================
 with st.sidebar:
-    st.markdown("<div class='sidebar-title'>Seed2Harvest Systems</div>", unsafe_allow_html=True)
-    st.markdown("### Enterprise Architecture")
-    st.markdown("""
-    **Business Layer**  
-    Mitigates manual response churn via automated technical advisory and lead qualification.
+    st.markdown("<div class='sidebar-title'>ERTG</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-subtitle'>OPERATIONS</div>", unsafe_allow_html=True)
     
-    **Application Layer**  
-    Python middleware executing domain filters and dialect translation before API dispatch.
-    
-    **Data Layer**  
-    Relational SQLite schema (`orders`, `inventory`, `clients`) enforcing referential integrity.
-    
-    **Technology Layer**  
-    Python 3.11, Linux PaaS, and LPU inference hardware.
-    """)
-    st.markdown('<div class="badge-popia">POPIA Act Compliant</div>', unsafe_allow_html=True)
-    
-    st.divider()
-    st.caption("Version 2.1.0 | Operational Value Stream Module")
+    if st.session_state.authenticated:
+        page_selection = st.radio(
+            "Navigate", 
+            ["❖ CHAT", "☷ CATALOGUE", "📝 RESERVE ORDER", "⚙ GLOBAL FEED"],
+            label_visibility="collapsed"
+        )
+    else:
+        page_selection = "ONBOARDING"
+        st.caption("Please authenticate to access operations.")
+        
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-title'>⛟ YOUR BASKET</div>", unsafe_allow_html=True)
+    st.write("Empty")
+    if st.button("CLEAR BASKET"):
+        st.toast("Basket Cleared")
+        
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    if st.button("TERMINATE"):
+        st.session_state.authenticated = False
+        st.session_state.messages = []
+        st.rerun()
 
-# ================= MAIN UI LAYOUT =================
-st.markdown("""
-<div class="hero-banner">
-    <h1>Seed2Harvest Enterprise Consultant</h1>
-    <p>Operational Value Stream: Soil Nutrition, Vernacular Guidance & Real-time Stock Reservation</p>
-</div>
-""", unsafe_allow_html=True)
-
-# Image Showcase (Gallery replacing the need for a third-party carousel package)
-st.markdown("#### Agricultural Operations")
-col_img1, col_img2, col_img3 = st.columns(3)
+# ================= MAIN HEADER =================
 try:
-    # Utilizing the images referenced from the project zip directory
-    with col_img1:
-        st.image("images/clare-tallamy-pXIlqK9fas8-unsplash.jpg", use_container_width=True, caption="Biological Crop Care")
-    with col_img2:
-        st.image("images/maxresdefault.jpg", use_container_width=True, caption="Field Operations")
-    with col_img3:
-        st.image("images/x91000-r4x000619_rrd.avif", use_container_width=True, caption="Precision Agriculture")
+    st.image("images/maxresdefault.jpg", use_container_width=True)
 except Exception:
-    st.info("Image assets pending deployment in /images directory.")
+    # Fallback if image path is unavailable
+    st.markdown("<div style='height: 200px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
 
-st.divider()
+st.markdown("<div class='main-title'>SEED 2<br>HARVEST</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>ELEVATE YOUR EVERYDAY</div>", unsafe_allow_html=True)
 
-# Main Application Tabs (Removed Emojis)
-tab_chat, tab_catalog, tab_order = st.tabs([
-    "Technical Advisory", 
-    "Live Inventory", 
-    "Reserve Order"
-])
+# ================= VIEWS =================
 
-# ----------------- TAB 1: ADVISORY CHAT -----------------
-with tab_chat:
-    st.markdown("##### Enterprise AI Consultation")
-    st.caption("Active Guardrails: Domain Boundary Enforcement & South African Dialect Interpretation.")
+if not st.session_state.authenticated:
+    st.markdown("<div class='section-header'>❖ CLIENT ONBOARDING</div>", unsafe_allow_html=True)
     
-    if "messages" not in st.session_state:
+    col_form, _ = st.columns([2, 1])
+    with col_form:
+        client_name = st.text_input("NAME", key="onboard_name")
+        client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
+        client_location = st.text_input("LOCATION", key="onboard_loc")
+        
+        st.markdown("""
+        <div class="custom-warning">
+            Hello fellow farmer. For the agent to work effectively we need permission to work with your data. Click yes to continue or leave.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<div class='quote-text'>\"ubumfihlo ngundoqo\" — Ashley</div>", unsafe_allow_html=True)
+        
+        permission = st.checkbox("I GRANT PERMISSION")
+        
+        if st.button("AUTHORIZE ENTRY"):
+            if client_name and client_farm and client_location and permission:
+                st.session_state.user_data = {"name": client_name, "farm": client_farm, "location": client_location}
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Please complete all fields and grant permission to proceed.")
+
+elif page_selection == "❖ CHAT":
+    st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
+    
+    if not st.session_state.messages:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Welcome to Seed2Harvest. How can I assist you with your soil nutrition, biological crop care, or produce orders today?"}
+            {"role": "assistant", "content": f"Welcome back, {st.session_state.user_data['name']}. How can I assist your operations at {st.session_state.user_data['farm']} today?"}
         ]
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if user_prompt := st.chat_input("Query soil treatments, pest management, or pricing..."):
+    if user_prompt := st.chat_input("MESSAGE"):
         with st.chat_message("user"):
             st.markdown(user_prompt)
         st.session_state.messages.append({"role": "user", "content": user_prompt})
 
-        # Step 1: Middleware Domain Boundary Inspection
         if not AgriculturalMiddleware.enforce_domain_boundary(user_prompt):
-            disclaimer = (
-                "**Out of Domain Scope:** I am bounded specifically to assist with Seed2Harvest's agricultural products, "
-                "soil biology, and order reservations. Please query an agronomic or product-related topic."
-            )
+            disclaimer = "SYSTEM ALERt: Query out of operational bounds. Please restrict inquiries to agronomy, inventory, or reservations."
             with st.chat_message("assistant"):
-                st.warning(disclaimer, icon=None)
+                st.warning(disclaimer, icon="⚠️")
             st.session_state.messages.append({"role": "assistant", "content": disclaimer})
         else:
-            # Step 2: Vernacular Normalization
             normalized_prompt, detected_terms = AgriculturalMiddleware.normalize_vernacular(user_prompt)
             
-            if detected_terms:
-                st.toast(f"Semantic Interpreter: Mapped dialect terms [{', '.join(detected_terms)}]", icon=None)
-
-            # Step 3: Groq LLM Inference Call
             if not groq_client:
-                st.error("API Key not detected. Please configure system environment variables.")
+                st.error("SYSTEM ERROR: API connectivity offline.")
             else:
                 try:
                     chat_completion = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=[
                             {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": f"Farmer Query (Normalized): {normalized_prompt}"}
+                            {"role": "user", "content": f"Normalized Input: {normalized_prompt}"}
                         ],
-                        temperature=0.15, # Highly conservative to prevent hallucination
+                        temperature=0.15,
                         max_tokens=450
                     )
                     reply = chat_completion.choices[0].message.content
@@ -256,59 +279,64 @@ with tab_chat:
                 except Exception as err:
                     st.error(f"Inference Engine Error: {err}")
 
-# ----------------- TAB 2: LIVE CATALOG -----------------
-with tab_catalog:
-    st.markdown("##### Warehouse Stock (Relational Store)")
-    st.caption("Direct integration with `inventory_master` via indexed SQL queries.")
+elif page_selection == "☷ CATALOGUE":
+    st.markdown("<div class='section-header'>CATALOGUE</div>", unsafe_allow_html=True)
     
-    current_inventory = db.fetch_inventory()
     df_catalog = pd.DataFrame(
-        current_inventory, 
-        columns=["Product Name", "Category", "Available Stock", "Unit Price (ZAR)", "Dosage & Application Guideline"]
+        catalog_data, 
+        columns=["Product Name", "Category", "Available Stock", "Unit Price", "Application Guideline"]
     )
-    df_catalog["Unit Price (ZAR)"] = df_catalog["Unit Price (ZAR)"].map("R {:,.2f}".format)
+    df_catalog["Unit Price"] = df_catalog["Unit Price"].map("ZAR {:,.2f}".format)
+    
+    # Apply dark theme styling to dataframe display
     st.dataframe(df_catalog, use_container_width=True, hide_index=True)
 
-# ----------------- TAB 3: ORDER COMMITMENT -----------------
-with tab_order:
-    st.markdown("##### Stock Locking & Order Reservation")
-    st.caption("Executes atomic SQL transactions with PII isolation.")
+elif page_selection == "📝 RESERVE ORDER":
+    st.markdown("<div class='section-header'>RESERVE ORDER</div>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
-        client_name = st.text_input("Farmer / Organization Name")
-        client_phone = st.text_input("Phone Number")
-        client_location = st.text_input("Delivery District (e.g., Paarl, Western Cape)")
+        st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
+        st.text_input("LOCATION", value=st.session_state.user_data["location"], disabled=True)
+        phone = st.text_input("CONTACT NUMBER")
     
     with col2:
-        product_names = [p[0] for p in current_inventory]
-        selected_product = st.selectbox("Select Certified Product", product_names)
-        order_qty = st.number_input("Quantity", min_value=1, max_value=500, value=5, step=1)
-        popia_consent = st.checkbox("I consent to Seed2Harvest storing my contact info strictly for delivery processing.")
-
-    if st.button("Commit Order Reservation", type="primary"):
-        if not client_name or not client_phone or not client_location:
-            st.error("Please provide all required organization information.", icon=None)
-        elif not popia_consent:
-            st.warning("Data privacy consent is mandatory to process order allocations.", icon=None)
+        product_names = [p[0] for p in catalog_data]
+        selected_product = st.selectbox("PRODUCT ALLOCATION", product_names)
+        order_qty = st.number_input("VOLUME", min_value=1, max_value=500, value=1, step=1)
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("PROCESS TRANSACTION"):
+        if not phone:
+            st.error("Contact number required for transaction.")
         else:
             success, result = db.process_order_transaction(
-                farmer_name=client_name,
-                phone=client_phone,
-                location=client_location,
+                farmer_name=st.session_state.user_data["name"],
+                phone=phone,
+                location=st.session_state.user_data["location"],
                 product_name=selected_product,
                 quantity=order_qty
             )
             if success:
-                st.success("Order Reservation successfully committed to the database.", icon=None)
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>Receipt Reference: ORD-00{result['order_id']}</h4>
-                    <p><strong>Allocated Item:</strong> {result['product']} &times; {result['quantity']}</p>
-                    <p><strong>Total Amount Due:</strong> R {result['total_cost']:,.2f}</p>
-                    <p><strong>Warehouse Status:</strong> Inventory Reserved. Remaining Stock: {result['remaining_stock']} units.</p>
-                </div>
-                """, unsafe_allow_html=True)
-                st.rerun()
+                st.success(f"Transaction Complete. Reference: ORD-{result['order_id']}")
+                st.info(f"Allocated: {result['quantity']}x {result['product']} | Total: ZAR {result['total_cost']:,.2f}")
             else:
-                st.error(f"Transaction Aborted: {result}", icon=None)
+                st.error(f"Transaction Aborted: {result}")
+
+elif page_selection == "⚙ GLOBAL FEED":
+    st.markdown("<div class='section-header'>GLOBAL FEED & SYSTEM ARCHITECTURE</div>", unsafe_allow_html=True)
+    st.markdown("""
+    **ACTIVE SYSTEMS:**
+    - **EA Middleware:** Python runtime intercepting domain bounds & translating vernacular.
+    - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
+    - **Compliance:** POPIA standards enforced on client data encapsulation.
+    - **Inference Engine:** Groq LPU hardware routing to LLama-3-70b.
+    """)
+
+# ================= FOOTER =================
+st.markdown("""
+<div class='footer'>
+    <h4>BUZUZI INCORPORATED</h4>
+    <p>FOLLOW ON SOCIALS: @SEED2HARVEST_GLOBAL</p>
+</div>
+""", unsafe_allow_html=True)
