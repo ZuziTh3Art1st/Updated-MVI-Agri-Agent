@@ -244,7 +244,7 @@ elif page_selection == "❖ CHAT":
         else:
             try:
                 chat_completion = groq_client.chat.completions.create(
-                    model="llama3-8b-8192",  # Rock-solid, standard available Groq model
+                    model="openai/gpt-oss-120b",  # Updated to recommended active model
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": f"Farmer Query: {normalized_prompt}"}
@@ -309,7 +309,7 @@ elif page_selection == "⚙ GLOBAL FEED":
     - **EA Middleware:** Python runtime translating regional vernacular & normalizing input streams.
     - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
     - **Compliance:** POPIA standards enforced on client data encapsulation.
-    - **Inference Engine:** Groq LPU hardware routing to Llama-3 8B.
+    - **Inference Engine:** Groq LPU hardware routing to openai/gpt-oss-120b.
     """)
 
 # ================= FOOTER =================
