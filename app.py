@@ -105,13 +105,7 @@ if "messages" not in st.session_state:
 
 # ================= APPLICATION MIDDLEWARE =================
 class AgriculturalMiddleware:
-    """EA Application Layer: Input Boundary Guardrail & Dialect Normalization"""
-    AGRICULTURAL_KEYWORDS = [
-        "soil", "plant", "crop", "fertilizer", "fertiliser", "seed", "harvest", 
-        "pest", "leaf", "growth", "water", "yield", "nutrient", "fungus", 
-        "nitrogen", "ph", "carbon", "dosage", "order", "price", "stock",
-        "bioboost", "hydrocache", "nitro", "bioshield", "ecocert"
-    ]
+    """EA Application Layer: Dialect Normalization & Soft Guidance"""
     
     SLANG_DICTIONARY = {
         r"\bblaarbrand\b": "leaf scorch / fungal burn",
@@ -125,13 +119,6 @@ class AgriculturalMiddleware:
         r"\bplaag\b": "pest infestation",
         r"\bgif\b": "crop protection remedy"
     }
-
-    @classmethod
-    def enforce_domain_boundary(cls, text: str) -> bool:
-        clean = text.lower()
-        if any(w in clean for w in ["hello", "hi", "help", "order", "quote", "buy"]):
-            return True
-        return any(keyword in clean for keyword in cls.AGRICULTURAL_KEYWORDS)
 
     @classmethod
     def normalize_vernacular(cls, text: str) -> tuple[str, list[str]]:
@@ -160,12 +147,12 @@ SYSTEM_PROMPT = f"""
 You are the Seed 2 Harvest Strategic Agent.
 SMME Partner: Shaun Cairns (Cape Town, South Africa).
 
-STRICT BOUNDARY CONSTRAINTS:
-1. Ground your advice exclusively in the certified product catalog:
+INSTRUCTIONS:
+1. Ground your advice in the certified product catalog:
 {catalog_context}
-2. Never invent unverified formulations. Respect ECOCERT safety limits.
-3. Steer farmers toward organic biological alternatives.
-4. Keep responses concise, professional, and action-oriented. Do not use emojis.
+2. Acknowledge user requests gracefully, providing the best possible agronomic or catalogue-backed answer.
+3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
+4. Keep responses professional, clear, and actionable. Do not use emojis.
 """
 
 # ================= SIDEBAR NAVIGATION =================
@@ -199,7 +186,6 @@ with st.sidebar:
 try:
     st.image("images/maxresdefault.jpg", use_container_width=True)
 except Exception:
-    # Fallback if image path is unavailable
     st.markdown("<div style='height: 200px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
 
 st.markdown("<div class='main-title'>SEED 2<br>HARVEST</div>", unsafe_allow_html=True)
@@ -251,33 +237,28 @@ elif page_selection == "❖ CHAT":
             st.markdown(user_prompt)
         st.session_state.messages.append({"role": "user", "content": user_prompt})
 
-        if not AgriculturalMiddleware.enforce_domain_boundary(user_prompt):
-            disclaimer = "SYSTEM ALERt: Query out of operational bounds. Please restrict inquiries to agronomy, inventory, or reservations."
-            with st.chat_message("assistant"):
-                st.warning(disclaimer, icon="⚠️")
-            st.session_state.messages.append({"role": "assistant", "content": disclaimer})
+        # Normalize any regional vernacular seamlessly without hard blocking
+        normalized_prompt, detected_terms = AgriculturalMiddleware.normalize_vernacular(user_prompt)
+        
+        if not groq_client:
+            st.error("SYSTEM ERROR: API connectivity offline.")
         else:
-            normalized_prompt, detected_terms = AgriculturalMiddleware.normalize_vernacular(user_prompt)
-            
-            if not groq_client:
-                st.error("SYSTEM ERROR: API connectivity offline.")
-            else:
-                try:
-                    chat_completion = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile", # Updated active Groq model
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": f"Normalized Input: {normalized_prompt}"}
-                        ],
-                        temperature=0.15,
-                        max_tokens=450
-                    )
-                    reply = chat_completion.choices[0].message.content
-                    with st.chat_message("assistant"):
-                        st.markdown(reply)
-                    st.session_state.messages.append({"role": "assistant", "content": reply})
-                except Exception as err:
-                    st.error(f"Inference Engine Error: {err}")
+            try:
+                chat_completion = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": f"Farmer Query: {normalized_prompt}"}
+                    ],
+                    temperature=0.3,
+                    max_tokens=450
+                )
+                reply = chat_completion.choices[0].message.content
+                with st.chat_message("assistant"):
+                    st.markdown(reply)
+                st.session_state.messages.append({"role": "assistant", "content": reply})
+            except Exception as err:
+                st.error(f"Inference Engine Error: {err}")
 
 elif page_selection == "☷ CATALOGUE":
     st.markdown("<div class='section-header'>CATALOGUE</div>", unsafe_allow_html=True)
@@ -288,7 +269,6 @@ elif page_selection == "☷ CATALOGUE":
     )
     df_catalog["Unit Price"] = df_catalog["Unit Price"].map("ZAR {:,.2f}".format)
     
-    # Apply dark theme styling to dataframe display
     st.dataframe(df_catalog, use_container_width=True, hide_index=True)
 
 elif page_selection == "📝 RESERVE ORDER":
@@ -327,10 +307,10 @@ elif page_selection == "⚙ GLOBAL FEED":
     st.markdown("<div class='section-header'>GLOBAL FEED & SYSTEM ARCHITECTURE</div>", unsafe_allow_html=True)
     st.markdown("""
     **ACTIVE SYSTEMS:**
-    - **EA Middleware:** Python runtime intercepting domain bounds & translating vernacular.
+    - **EA Middleware:** Python runtime translating regional vernacular & normalizing input streams.
     - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
     - **Compliance:** POPIA standards enforced on client data encapsulation.
-    - **Inference Engine:** Groq LPU hardware routing to LLama-3-70b.
+    - **Inference Engine:** Groq LPU hardware routing to LLama-3-70b-versatile.
     """)
 
 # ================= FOOTER =================
