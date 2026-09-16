@@ -23,7 +23,7 @@ st.markdown("""
     
     /* Constrain Hero Image Height so user doesn't have to scroll */
     .hero-img-container img {
-        max-height: 180px !important;
+        max-height: 160px !important;
         object-fit: cover;
         width: 100%;
         border-radius: 4px;
@@ -53,9 +53,9 @@ st.markdown("""
         background-color: #16181c; border: 2px solid #c69c6d; padding: 30px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 20px;
     }
     
-    .footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #333; }
-    .footer h4 { color: #c69c6d; margin: 0; font-size: 1.2rem; letter-spacing: 2px;}
-    .footer p { color: #666666; font-size: 0.8rem; letter-spacing: 1px; margin-top: 5px;}
+    .footer { text-align: center; margin-top: 40px; padding-top: 15px; border-top: 1px solid #333; }
+    .footer h4 { color: #c69c6d; margin: 0; font-size: 1.1rem; letter-spacing: 2px;}
+    .footer p { color: #666666; font-size: 0.75rem; letter-spacing: 1px; margin-top: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -83,14 +83,11 @@ class AgriculturalMiddleware:
     }
 
     @classmethod
-    def normalize_vernacular(cls, text: str) -> tuple[str, list[str]]:
+    def normalize_vernacular(cls, text: str) -> str:
         normalized = text
-        detected = []
         for pattern, replacement in cls.SLANG_DICTIONARY.items():
-            if re.search(pattern, normalized, re.IGNORECASE):
-                detected.append(pattern.replace(r"\b", ""))
-                normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
-        return normalized, detected
+            normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+        return normalized
 
 # ================= GROQ CLIENT SETUP =================
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -112,7 +109,7 @@ SMME Partner: Shaun Cairns (Cape Town, South Africa).
 INSTRUCTIONS:
 1. Ground your advice in the certified product catalog:
 {catalog_context}
-2. Acknowledge user requests gracefully, providing the best possible agronomic or catalogue-backed answer.
+2. MAINTAIN CONTEXT MEMORY: Remember previous products discussed by the user across turns (e.g. if the user previously requested NitroGrow Pellets, keep referencing them).
 3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
 4. Keep responses professional, clear, and actionable. Do not use emojis.
 """
@@ -157,7 +154,7 @@ st.markdown("<div class='hero-img-container'>", unsafe_allow_html=True)
 try:
     st.image("images/maxresdefault.jpg", use_container_width=True)
 except Exception:
-    st.markdown("<div style='height: 100px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 80px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='main-title'>SEED 2<br>HARVEST</div>", unsafe_allow_html=True)
@@ -210,18 +207,20 @@ elif page_selection == "❖ CHAT":
             st.markdown(user_prompt)
         st.session_state.messages.append({"role": "user", "content": user_prompt})
 
-        normalized_prompt, detected_terms = AgriculturalMiddleware.normalize_vernacular(user_prompt)
+        normalized_prompt = AgriculturalMiddleware.normalize_vernacular(user_prompt)
         
         if not groq_client:
             st.error("SYSTEM ERROR: API connectivity offline.")
         else:
             try:
+                # Format full conversational history into Groq payload to preserve memory across turns
+                conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+                for m in st.session_state.messages:
+                    conversation_history.append({"role": m["role"], "content": m["content"]})
+                
                 chat_completion = groq_client.chat.completions.create(
                     model="openai/gpt-oss-120b",
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Farmer Query: {normalized_prompt}"}
-                    ],
+                    messages=conversation_history,
                     temperature=0.3,
                     max_tokens=450
                 )
@@ -264,7 +263,7 @@ elif page_selection == "📝 RESERVE ORDER":
 
     st.markdown("### CURRENT BASKET ITEMS")
     if not st.session_state.basket:
-        st.warning("Your basket is empty. Add items from the Catalogue page.")
+        st.warning("Your basket is empty. Add items from the Catalogue page or select via chat.")
     else:
         for item, qty in st.session_state.basket.items():
             st.write(f"- {qty}x {item}")
@@ -296,14 +295,12 @@ elif page_selection == "📝 RESERVE ORDER":
             """, unsafe_allow_html=True)
             
             subtotal = 0.0
-            with db.get_db() if hasattr(db, 'get_db') else db: # Fallback or standard fetch
-                for prod, qty in st.session_state.basket.items():
-                    # fetch price from db or list
-                    price_row = [p[3] for p in catalog_data if p[0] == prod]
-                    price = price_row[0] if price_row else 0.0
-                    total_item = price * qty
-                    subtotal += total_item
-                    st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{total_item:.2f}</span>", unsafe_allow_html=True)
+            for prod, qty in st.session_state.basket.items():
+                price_row = [p[3] for p in catalog_data if p[0] == prod]
+                price = price_row[0] if price_row else 0.0
+                total_item = price * qty
+                subtotal += total_item
+                st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{total_item:.2f}</span>", unsafe_allow_html=True)
             
             tax_total = subtotal * 0.15  # 15% VAT standard for SA
             grand_total = subtotal + tax_total
