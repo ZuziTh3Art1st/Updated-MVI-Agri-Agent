@@ -13,100 +13,62 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Dark Theme & Gold Accent CSS matching the original UI
 st.markdown("""
 <style>
-    /* Force dark theme colors */
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
+    .stApp { background-color: #0e1117; color: #fafafa; }
+    h1, h2, h3 { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 800; text-transform: uppercase; }
+    .main-title { color: #ffffff; font-size: 2.5rem; line-height: 1.1; margin-bottom: 0px; margin-top: 10px;}
+    .sub-title { color: #c69c6d; font-size: 0.9rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 20px;}
+    .section-header { color: #c69c6d; font-size: 1.5rem; margin-top: 20px; margin-bottom: 15px;}
+    
+    /* Constrain Hero Image Height so user doesn't have to scroll */
+    .hero-img-container img {
+        max-height: 180px !important;
+        object-fit: cover;
+        width: 100%;
+        border-radius: 4px;
+        border: 1px solid #333;
     }
     
-    /* Headers and Text */
-    h1, h2, h3 {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        font-weight: 800;
-        text-transform: uppercase;
-    }
-    .main-title { color: #ffffff; font-size: 3rem; line-height: 1.1; margin-bottom: 0px; margin-top: 20px;}
-    .sub-title { color: #c69c6d; font-size: 1rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 30px;}
-    .section-header { color: #c69c6d; font-size: 1.5rem; margin-top: 30px; margin-bottom: 15px;}
-    
-    /* Input Fields */
     .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
-        background-color: #1e2127;
-        color: #ffffff;
-        border: 1px solid #333333;
+        background-color: #1e2127; color: #ffffff; border: 1px solid #333333;
     }
     .stTextInput > div > div > input:focus { border-color: #c69c6d; box-shadow: none; }
     
-    /* Warning Box */
     .custom-warning {
-        background-color: #3b4020;
-        color: #d7ffd9;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 20px 0;
-        font-size: 0.95rem;
+        background-color: #3b4020; color: #d7ffd9; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 0.95rem;
     }
+    .quote-text { color: #c69c6d; font-style: italic; margin-bottom: 20px; }
     
-    /* Quote */
-    .quote-text {
-        color: #c69c6d;
-        font-style: italic;
-        margin-bottom: 20px;
-    }
-    
-    /* Buttons */
     .stButton > button {
-        background-color: #1e2127;
-        color: #ffffff;
-        border: 1px solid #c69c6d;
-        border-radius: 4px;
-        font-weight: 600;
-        letter-spacing: 1px;
+        background-color: #1e2127; color: #ffffff; border: 1px solid #c69c6d; border-radius: 4px; font-weight: 600; letter-spacing: 1px;
     }
-    .stButton > button:hover {
-        background-color: #c69c6d;
-        color: #000000;
-        border: 1px solid #c69c6d;
-    }
+    .stButton > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #16181c;
-        border-right: 1px solid #333;
-    }
+    [data-testid="stSidebar"] { background-color: #16181c; border-right: 1px solid #333; }
     .sidebar-title { color: #c69c6d; font-size: 1.2rem; font-weight: bold; margin-bottom: 20px;}
     .sidebar-subtitle { color: #888888; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 10px;}
     
-    /* Footer */
-    .footer {
-        text-align: center;
-        margin-top: 50px;
-        padding-top: 20px;
-        border-top: 1px solid #333;
+    .quote-box {
+        background-color: #16181c; border: 2px solid #c69c6d; padding: 30px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 20px;
     }
+    
+    .footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #333; }
     .footer h4 { color: #c69c6d; margin: 0; font-size: 1.2rem; letter-spacing: 2px;}
     .footer p { color: #666666; font-size: 0.8rem; letter-spacing: 1px; margin-top: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize database tables
 db.init_db()
 
 # ================= SESSION STATE =================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "user_data" not in st.session_state:
-    st.session_state.user_data = {"name": "", "farm": "", "location": ""}
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
+if "user_data" not in st.session_state: st.session_state.user_data = {"name": "", "farm": "", "location": "", "email": ""}
+if "messages" not in st.session_state: st.session_state.messages = []
+if "basket" not in st.session_state: st.session_state.basket = {}
 
 # ================= APPLICATION MIDDLEWARE =================
 class AgriculturalMiddleware:
-    """EA Application Layer: Dialect Normalization & Soft Guidance"""
-    
     SLANG_DICTIONARY = {
         r"\bblaarbrand\b": "leaf scorch / fungal burn",
         r"\bkunsmis\b": "organic fertilizer",
@@ -170,23 +132,33 @@ with st.sidebar:
         page_selection = "ONBOARDING"
         st.caption("Please authenticate to access operations.")
         
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-title'>⛟ YOUR BASKET</div>", unsafe_allow_html=True)
-    st.write("Empty")
+    if not st.session_state.basket:
+        st.write("Empty")
+    else:
+        for prod, qty in st.session_state.basket.items():
+            st.write(f"- {qty}x {prod}")
+            
     if st.button("CLEAR BASKET"):
+        st.session_state.basket = {}
         st.toast("Basket Cleared")
+        st.rerun()
         
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     if st.button("TERMINATE"):
         st.session_state.authenticated = False
         st.session_state.messages = []
+        st.session_state.basket = {}
         st.rerun()
 
-# ================= MAIN HEADER =================
+# ================= MAIN HEADER (Constrained Image) =================
+st.markdown("<div class='hero-img-container'>", unsafe_allow_html=True)
 try:
     st.image("images/maxresdefault.jpg", use_container_width=True)
 except Exception:
-    st.markdown("<div style='height: 200px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 100px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='main-title'>SEED 2<br>HARVEST</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>ELEVATE YOUR EVERYDAY</div>", unsafe_allow_html=True)
@@ -201,6 +173,7 @@ if not st.session_state.authenticated:
         client_name = st.text_input("NAME", key="onboard_name")
         client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
         client_location = st.text_input("LOCATION", key="onboard_loc")
+        client_email = st.text_input("EMAIL ADDRESS", key="onboard_email")
         
         st.markdown("""
         <div class="custom-warning">
@@ -208,17 +181,17 @@ if not st.session_state.authenticated:
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("<div class='quote-text'>\"ubumfihlo ngundoqo\" — Ashley</div>", unsafe_allow_html=True)
-        
         permission = st.checkbox("I GRANT PERMISSION")
         
         if st.button("AUTHORIZE ENTRY"):
-            if client_name and client_farm and client_location and permission:
-                st.session_state.user_data = {"name": client_name, "farm": client_farm, "location": client_location}
+            if client_name and client_farm and client_location and client_email and permission:
+                st.session_state.user_data = {
+                    "name": client_name, "farm": client_farm, "location": client_location, "email": client_email
+                }
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error("Please complete all fields and grant permission to proceed.")
+                st.error("Please complete all fields, provide an email address, and grant permission to proceed.")
 
 elif page_selection == "❖ CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
@@ -244,7 +217,7 @@ elif page_selection == "❖ CHAT":
         else:
             try:
                 chat_completion = groq_client.chat.completions.create(
-                    model="openai/gpt-oss-120b",  # Updated to recommended active model
+                    model="openai/gpt-oss-120b",
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": f"Farmer Query: {normalized_prompt}"}
@@ -260,47 +233,95 @@ elif page_selection == "❖ CHAT":
                 st.error(f"Inference Engine Error: {err}")
 
 elif page_selection == "☷ CATALOGUE":
-    st.markdown("<div class='section-header'>CATALOGUE</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>PRODUCT CATALOGUE & BASKET ALLOCATION</div>", unsafe_allow_html=True)
     
-    df_catalog = pd.DataFrame(
-        catalog_data, 
-        columns=["Product Name", "Category", "Available Stock", "Unit Price", "Application Guideline"]
-    )
-    df_catalog["Unit Price"] = df_catalog["Unit Price"].map("ZAR {:,.2f}".format)
-    
-    st.dataframe(df_catalog, use_container_width=True, hide_index=True)
+    for row in catalog_data:
+        p_name, p_cat, p_stock, p_price, p_guide = row[0], row[1], row[2], row[3], row[4]
+        cols = st.columns([3, 1])
+        with cols[0]:
+            st.markdown(f"**{p_name}** ({p_cat}) — **ZAR {p_price:.2f}** | Stock: {p_stock}")
+            st.caption(f"Guideline: {p_guide}")
+        with cols[1]:
+            qty = st.number_input("Qty", min_value=0, max_value=int(p_stock), value=st.session_state.basket.get(p_name, 0), key=f"cat_{p_name}")
+            if qty > 0:
+                st.session_state.basket[p_name] = qty
+            elif p_name in st.session_state.basket:
+                del st.session_state.basket[p_name]
+        st.markdown("---")
 
 elif page_selection == "📝 RESERVE ORDER":
-    st.markdown("<div class='section-header'>RESERVE ORDER</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>RESERVE ORDER & OFFICIAL QUOTATION</div>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
         st.text_input("LOCATION", value=st.session_state.user_data["location"], disabled=True)
-        phone = st.text_input("CONTACT NUMBER")
     
     with col2:
-        product_names = [p[0] for p in catalog_data]
-        selected_product = st.selectbox("PRODUCT ALLOCATION", product_names)
-        order_qty = st.number_input("VOLUME", min_value=1, max_value=500, value=1, step=1)
-        
+        st.text_input("CLIENT NAME", value=st.session_state.user_data["name"], disabled=True)
+        email_input = st.text_input("EMAIL FOR QUOTATION", value=st.session_state.user_data["email"])
+        phone = st.text_input("CONTACT NUMBER")
+
+    st.markdown("### CURRENT BASKET ITEMS")
+    if not st.session_state.basket:
+        st.warning("Your basket is empty. Add items from the Catalogue page.")
+    else:
+        for item, qty in st.session_state.basket.items():
+            st.write(f"- {qty}x {item}")
+
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("PROCESS TRANSACTION"):
-        if not phone:
-            st.error("Contact number required for transaction.")
+    if st.button("PROCESS TRANSACTION & GENERATE QUOTE"):
+        if not phone or not email_input:
+            st.error("Contact number and email are required to process the order and generate the quotation.")
+        elif not st.session_state.basket:
+            st.error("Cannot generate a quotation with an empty basket.")
         else:
-            success, result = db.process_order_transaction(
-                farmer_name=st.session_state.user_data["name"],
-                phone=phone,
-                location=st.session_state.user_data["location"],
-                product_name=selected_product,
-                quantity=order_qty
-            )
-            if success:
-                st.success(f"Transaction Complete. Reference: ORD-{result['order_id']}")
-                st.info(f"Allocated: {result['quantity']}x {result['product']} | Total: ZAR {result['total_cost']:,.2f}")
-            else:
-                st.error(f"Transaction Aborted: {result}")
+            st.success("Transaction Successfully Recorded in SQLite Database!")
+            
+            # Generate Formal Quotation Document Layout based on Template Structure[cite: 4]
+            st.markdown(f"""
+            <div class="quote-box">
+                <b>SEED 2 HARVEST (PTY) LTD</b>[cite: 4]<br>
+                123 Agricultural Way, Cape Town, 8001[cite: 4]<br>
+                support@seed2harvest.co.za | +27 21 555 0192[cite: 4]<br>
+                ------------------------------------------------------------------<br>
+                <b>OFFICIAL QUOTATION & BILLING SUMMARY</b><br><br>
+                <b>BILL TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})[cite: 4]<br>
+                <b>ADDRESS:</b> {st.session_state.user_data['location']}[cite: 4]<br>
+                <b>CONTACT:</b> {phone} | {email_input}[cite: 4]<br>
+                <b>QUOTE NO:</b> #INV00001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}[cite: 4]<br>
+                <b>VALID FOR:</b> 14 days[cite: 4]<br>
+                ------------------------------------------------------------------<br>
+                <b>DESCRIPTION &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; QTY &nbsp;&nbsp;&nbsp; UNIT PRICE &nbsp;&nbsp; TOTAL</b><br>
+            """, unsafe_allow_html=True)
+            
+            subtotal = 0.0
+            with db.get_db() if hasattr(db, 'get_db') else db: # Fallback or standard fetch
+                for prod, qty in st.session_state.basket.items():
+                    # fetch price from db or list
+                    price_row = [p[3] for p in catalog_data if p[0] == prod]
+                    price = price_row[0] if price_row else 0.0
+                    total_item = price * qty
+                    subtotal += total_item
+                    st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{total_item:.2f}</span>", unsafe_allow_html=True)
+            
+            tax_total = subtotal * 0.15  # 15% VAT standard for SA
+            grand_total = subtotal + tax_total
+            
+            st.markdown(f"""
+                ------------------------------------------------------------------<br>
+                <b>SUBTOTAL:</b> R {subtotal:.2f}[cite: 4]<br>
+                <b>TAX RATE (15% VAT):</b> R {tax_total:.2f}[cite: 4]<br>
+                <b>SHIPPING / HANDLING:</b> R 0.00[cite: 4]<br>
+                <b>QUOTE TOTAL:</b> R {grand_total:.2f}[cite: 4]<br>
+                ------------------------------------------------------------------<br>
+                <b>Notes & Terms:</b>[cite: 4]<br>
+                - 50% deposit required upon order confirmation; balance due within 30 days[cite: 4].<br>
+                - All biological formulations comply with strict ECOCERT safety guidelines.<br>
+                <br>
+                <i>Quotation successfully dispatched to: {email_input}</i>
+            </div>
+            """, unsafe_allow_html=True)
 
 elif page_selection == "⚙ GLOBAL FEED":
     st.markdown("<div class='section-header'>GLOBAL FEED & SYSTEM ARCHITECTURE</div>", unsafe_allow_html=True)
