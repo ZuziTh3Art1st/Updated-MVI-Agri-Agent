@@ -53,6 +53,10 @@ st.markdown("""
         background-color: #16181c; border: 2px solid #c69c6d; padding: 30px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 20px;
     }
     
+    .email-preview-box {
+        background-color: #1a1e24; border: 1px dashed #c69c6d; padding: 20px; border-radius: 6px; margin-top: 20px; color: #e0e0e0; font-family: monospace;
+    }
+    
     .footer { text-align: center; margin-top: 40px; padding-top: 15px; border-top: 1px solid #333; }
     .footer h4 { color: #c69c6d; margin: 0; font-size: 1.1rem; letter-spacing: 2px;}
     .footer p { color: #666666; font-size: 0.75rem; letter-spacing: 1px; margin-top: 5px;}
@@ -194,7 +198,7 @@ elif page_selection == "❖ CHAT":
     INSTRUCTIONS:
     1. Ground your advice in the certified product catalog:
     {catalog_context}
-    2. Never ask for their name or address again. Use their profile context automatically.
+    2. Never ask for their name, farm, or address again. Use their profile context automatically.
     3. Proactively ask users if they want an official **Invoice** or a **QR Code for Payment/Quotation** whenever billing or order finalization is discussed.
     4. Keep responses professional, clear, and actionable. Do not use emojis.
     """
@@ -259,7 +263,6 @@ elif page_selection == "📝 RESERVE ORDER":
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
-        # Allow quick address override or accept typed input
         location_input = st.text_input("LOCATION / DELIVERY ADDRESS", value=st.session_state.user_data["location"])
     
     with col2:
@@ -267,7 +270,6 @@ elif page_selection == "📝 RESERVE ORDER":
         email_input = st.text_input("EMAIL FOR QUOTATION", value=st.session_state.user_data["email"])
         phone = st.text_input("CONTACT NUMBER")
 
-    # Document type preference selection as requested
     doc_type = st.radio("SELECT DOCUMENT TYPE TO GENERATE:", ["Official Invoice", "QR Code Quotation Summary"], horizontal=True)
 
     st.markdown("### CURRENT BASKET ITEMS")
@@ -284,7 +286,7 @@ elif page_selection == "📝 RESERVE ORDER":
         elif not st.session_state.basket:
             st.error("Cannot generate documentation with an empty basket.")
         else:
-            st.success(f"Transaction Recorded & {doc_type} Successfully Emailed to {email_input}!")
+            st.success(f"Transaction Recorded & {doc_type} Successfully Dispatched!")
             
             subtotal = 0.0
             for prod, qty in st.session_state.basket.items():
@@ -294,6 +296,22 @@ elif page_selection == "📝 RESERVE ORDER":
             
             tax_total = subtotal * 0.15
             grand_total = subtotal + tax_total
+
+            # Explicit Email Preview and Dispatch Simulation Card
+            st.markdown(f"""
+            <div class="email-preview-box">
+                <b>[SIMULATED OUTBOUND EMAIL DISPATCH]</b><br>
+                <b>TO:</b> {email_input}<br>
+                <b>SUBJECT: SEED2HARVEST ORDER INFORMATION</b><br>
+                ------------------------------------------------------------------<br>
+                Dear {st.session_state.user_data['name']},<br>
+                Please find attached your requested {doc_type.lower()} for your recent order at {st.session_state.user_data['farm']}.<br>
+                <b>Delivery Address:</b> {location_input}<br>
+                <b>Total Amount Payable:</b> R {grand_total:.2f} (Incl. 15% VAT)<br>
+                ------------------------------------------------------------------<br>
+                <i>Status: Dispatched Successfully via Seed2Harvest Mail Gateway.</i>
+            </div>
+            """, unsafe_allow_html=True)
 
             if doc_type == "Official Invoice":
                 st.markdown(f"""
@@ -319,7 +337,6 @@ elif page_selection == "📝 RESERVE ORDER":
                     <b>15% VAT:</b> R {tax_total:.2f}<br>
                     <b>TOTAL DUE:</b> R {grand_total:.2f}<br>
                     ------------------------------------------------------------------<br>
-                    <i>Confirmation and PDF Invoice dispatched to: {email_input}</i>
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -331,14 +348,14 @@ elif page_selection == "📝 RESERVE ORDER":
                 </div>
                 """, unsafe_allow_html=True)
                 
-                qr = qrcode.QRCode(box_size=4, border=2)
+                # Native Python qrcode generation with reliable stream rendering
+                qr = qrcode.QRCode(version=1, box_size=5, border=2)
                 qr.add_data(f"PAYMENT: R{grand_total:.2f} REF: S2H-INV001")
                 qr.make(fit=True)
                 img = qr.make_image(fill_color="black", back_color="white")
                 buffered = BytesIO()
                 img.save(buffered, format="PNG")
-                st.image(buffered.getvalue(), width=160)
-                st.write(f"Quotation Summary & QR Payment token successfully emailed to {email_input}.")
+                st.image(buffered.getvalue(), width=180)
 
 elif page_selection == "⚙ GLOBAL FEED":
     st.markdown("<div class='section-header'>GLOBAL FEED, MAP EXTENSION & PORTAL QR</div>", unsafe_allow_html=True)
@@ -348,23 +365,21 @@ elif page_selection == "⚙ GLOBAL FEED":
     with col_map:
         st.markdown("### 🗺️ INTERACTIVE FARM MAP")
         st.write(f"Delivery Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
-        # Interactive map allowing visual pin verification
         map_data = pd.DataFrame({
             'lat': [-33.9249],
             'lon': [18.4241]
         })
         st.map(map_data, zoom=10)
-        st.caption("You can zoom or inspect operational coordinates in Western Cape.")
+        st.caption("Inspect operational coordinates in Western Cape.")
         
     with col_qr:
         st.markdown("### 📱 OFFICIAL WEBSITE QR CODE")
         st.write("Scan to visit **Seed 2 Harvest** portal:")
         
-        qr = qrcode.QRCode(box_size=4, border=2)
+        qr = qrcode.QRCode(version=1, box_size=5, border=2)
         qr.add_data("https://seed2harvest.co.za")
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
-        
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         st.image(buffered.getvalue(), width=180)
