@@ -237,7 +237,6 @@ elif page_selection == "❖ CHAT":
             st.markdown(user_prompt)
         st.session_state.messages.append({"role": "user", "content": user_prompt})
 
-        # Normalize any regional vernacular seamlessly without hard blocking
         normalized_prompt, detected_terms = AgriculturalMiddleware.normalize_vernacular(user_prompt)
         
         if not groq_client:
@@ -245,7 +244,7 @@ elif page_selection == "❖ CHAT":
         else:
             try:
                 chat_completion = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-8b-instant", # Active, ultra-fast Groq model
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": f"Farmer Query: {normalized_prompt}"}
@@ -310,7 +309,7 @@ elif page_selection == "⚙ GLOBAL FEED":
     - **EA Middleware:** Python runtime translating regional vernacular & normalizing input streams.
     - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
     - **Compliance:** POPIA standards enforced on client data encapsulation.
-    - **Inference Engine:** Groq LPU hardware routing to LLama-3-70b-versatile.
+    - **Inference Engine:** Groq LPU hardware routing to Llama-3.1-8b-instant.
     """)
 
 # ================= FOOTER =================
