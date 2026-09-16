@@ -19,12 +19,13 @@ st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #fafafa; }
     h1, h2, h3 { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 800; text-transform: uppercase; }
-    .main-title { color: #ffffff; font-size: 2.5rem; line-height: 1.1; margin-bottom: 0px; margin-top: 10px;}
-    .sub-title { color: #c69c6d; font-size: 0.9rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 20px;}
-    .section-header { color: #c69c6d; font-size: 1.5rem; margin-top: 20px; margin-bottom: 15px;}
+    .main-title { color: #ffffff; font-size: 2rem; line-height: 1.1; margin-bottom: 0px; margin-top: 5px;}
+    .sub-title { color: #c69c6d; font-size: 0.8rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 10px;}
+    .section-header { color: #c69c6d; font-size: 1.3rem; margin-top: 10px; margin-bottom: 10px;}
     
+    /* Tightly constrain Hero Image Height so it acts as a neat header banner */
     .hero-img-container img {
-        max-height: 160px !important;
+        max-height: 90px !important;
         object-fit: cover;
         width: 100%;
         border-radius: 4px;
@@ -37,7 +38,7 @@ st.markdown("""
     .stTextInput > div > div > input:focus { border-color: #c69c6d; box-shadow: none; }
     
     .custom-warning {
-        background-color: #3b4020; color: #d7ffd9; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 0.95rem;
+        background-color: #3b4020; color: #d7ffd9; padding: 12px; border-radius: 5px; margin: 10px 0; font-size: 0.9rem;
     }
     
     .stButton > button {
@@ -46,20 +47,20 @@ st.markdown("""
     .stButton > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
     
     [data-testid="stSidebar"] { background-color: #16181c; border-right: 1px solid #333; }
-    .sidebar-title { color: #c69c6d; font-size: 1.2rem; font-weight: bold; margin-bottom: 20px;}
-    .sidebar-subtitle { color: #888888; font-size: 0.75rem; letter-spacing: 1px; margin-bottom: 10px;}
+    .sidebar-title { color: #c69c6d; font-size: 1.1rem; font-weight: bold; margin-bottom: 15px;}
+    .sidebar-subtitle { color: #888888; font-size: 0.7rem; letter-spacing: 1px; margin-bottom: 8px;}
     
     .quote-box {
-        background-color: #16181c; border: 2px solid #c69c6d; padding: 30px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 20px;
+        background-color: #16181c; border: 2px solid #c69c6d; padding: 20px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 15px;
     }
     
     .email-preview-box {
-        background-color: #1a1e24; border: 1px dashed #c69c6d; padding: 20px; border-radius: 6px; margin-top: 20px; color: #e0e0e0; font-family: monospace;
+        background-color: #1a1e24; border: 1px dashed #c69c6d; padding: 15px; border-radius: 6px; margin-top: 15px; color: #e0e0e0; font-family: monospace;
     }
     
-    .footer { text-align: center; margin-top: 40px; padding-top: 15px; border-top: 1px solid #333; }
-    .footer h4 { color: #c69c6d; margin: 0; font-size: 1.1rem; letter-spacing: 2px;}
-    .footer p { color: #666666; font-size: 0.75rem; letter-spacing: 1px; margin-top: 5px;}
+    .footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #333; }
+    .footer h4 { color: #c69c6d; margin: 0; font-size: 1rem; letter-spacing: 2px;}
+    .footer p { color: #666666; font-size: 0.7rem; letter-spacing: 1px; margin-top: 3px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,7 +107,7 @@ catalog_context = "\n".join([
     for row in catalog_data
 ])
 
-# ================= SIDEBAR NAVIGATION =================
+# ================= SIDEBAR NAVIGATION & REAL-TIME BASKET =================
 with st.sidebar:
     st.markdown("<div class='sidebar-title'>ERTG</div>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-subtitle'>OPERATIONS</div>", unsafe_allow_html=True)
@@ -123,11 +124,18 @@ with st.sidebar:
         
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-title'>⛟ YOUR BASKET</div>", unsafe_allow_html=True)
+    
+    # Render basket items in real time
+    total_basket_items = 0
     if not st.session_state.basket:
         st.write("Empty")
     else:
         for prod, qty in st.session_state.basket.items():
-            st.write(f"- {qty}x {prod}")
+            if qty > 0:
+                st.write(f"- {qty}x {prod}")
+                total_basket_items += qty
+        if total_basket_items == 0:
+            st.write("Empty")
             
     if st.button("CLEAR BASKET"):
         st.session_state.basket = {}
@@ -141,15 +149,15 @@ with st.sidebar:
         st.session_state.basket = {}
         st.rerun()
 
-# ================= MAIN HEADER =================
+# ================= COMPACT MAIN HEADER =================
 st.markdown("<div class='hero-img-container'>", unsafe_allow_html=True)
 try:
     st.image("images/maxresdefault.jpg", use_container_width=True)
 except Exception:
-    st.markdown("<div style='height: 80px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 50px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<div class='main-title'>SEED 2<br>HARVEST</div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'>SEED 2 HARVEST</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>ELEVATE YOUR EVERYDAY</div>", unsafe_allow_html=True)
 
 # ================= VIEWS =================
@@ -198,7 +206,7 @@ elif page_selection == "❖ CHAT":
     INSTRUCTIONS:
     1. Ground your advice in the certified product catalog:
     {catalog_context}
-    2. Never ask for their name, farm, or address again. Use their profile context automatically.
+    2. Never ask for their name or address again. Use their profile context automatically.
     3. Proactively ask users if they want an official **Invoice** or a **QR Code for Payment/Quotation** whenever billing or order finalization is discussed.
     4. Keep responses professional, clear, and actionable. Do not use emojis.
     """
@@ -241,7 +249,7 @@ elif page_selection == "❖ CHAT":
                 st.error(f"Inference Engine Error: {err}")
 
 elif page_selection == "☷ CATALOGUE":
-    st.markdown("<div class='section-header'>PRODUCT CATALOGUE & BASKET ALLOCATION</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>PRODUCT CATALOGUE & REAL-TIME BASKET</div>", unsafe_allow_html=True)
     
     for row in catalog_data:
         p_name, p_cat, p_stock, p_price, p_guide = row[0], row[1], row[2], row[3], row[4]
@@ -250,11 +258,15 @@ elif page_selection == "☷ CATALOGUE":
             st.markdown(f"**{p_name}** ({p_cat}) — **ZAR {p_price:.2f}** | Stock: {p_stock}")
             st.caption(f"Guideline: {p_guide}")
         with cols[1]:
-            qty = st.number_input("Qty", min_value=0, max_value=int(p_stock), value=st.session_state.basket.get(p_name, 0), key=f"cat_{p_name}")
-            if qty > 0:
-                st.session_state.basket[p_name] = qty
-            elif p_name in st.session_state.basket:
-                del st.session_state.basket[p_name]
+            current_qty = st.session_state.basket.get(p_name, 0)
+            # Use on_change / direct state update combined with rerun for instant real-time sidebar updates
+            qty = st.number_input("Qty", min_value=0, max_value=int(p_stock), value=current_qty, key=f"cat_{p_name}")
+            if qty != current_qty:
+                if qty > 0:
+                    st.session_state.basket[p_name] = qty
+                elif p_name in st.session_state.basket:
+                    del st.session_state.basket[p_name]
+                st.rerun()
         st.markdown("---")
 
 elif page_selection == "📝 RESERVE ORDER":
@@ -297,7 +309,7 @@ elif page_selection == "📝 RESERVE ORDER":
             tax_total = subtotal * 0.15
             grand_total = subtotal + tax_total
 
-            # Explicit Email Preview and Dispatch Simulation Card
+            # Simulated email dispatch with exact required subject header
             st.markdown(f"""
             <div class="email-preview-box">
                 <b>[SIMULATED OUTBOUND EMAIL DISPATCH]</b><br>
@@ -348,7 +360,6 @@ elif page_selection == "📝 RESERVE ORDER":
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Native Python qrcode generation with reliable stream rendering
                 qr = qrcode.QRCode(version=1, box_size=5, border=2)
                 qr.add_data(f"PAYMENT: R{grand_total:.2f} REF: S2H-INV001")
                 qr.make(fit=True)
