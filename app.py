@@ -139,7 +139,7 @@ with st.sidebar:
         st.session_state.basket = {}
         st.rerun()
 
-# ================= MAIN HEADER (Constrained Image) =================
+# ================= MAIN HEADER =================
 st.markdown("<div class='hero-img-container'>", unsafe_allow_html=True)
 try:
     st.image("images/maxresdefault.jpg", use_container_width=True)
@@ -183,7 +183,7 @@ if not st.session_state.authenticated:
 elif page_selection == "❖ CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
     
-    # Inject authenticated user profile directly into System Prompt so no redundancy is required
+    # Inject authenticated user profile directly into System Prompt so no redundancy occurs
     USER_IDENTITY_PROMPT = f"""
     You are the Seed 2 Harvest Strategic Agent.
     SMME Partner: Shaun Cairns (Cape Town, South Africa).
@@ -197,7 +197,7 @@ elif page_selection == "❖ CHAT":
     INSTRUCTIONS:
     1. Ground your advice in the certified product catalog:
     {catalog_context}
-    2. Since the client is already identified as {st.session_state.user_data['name']} from {st.session_state.user_data['farm']}, never ask for their name or address again. Use their profile context automatically.
+    2. Since the client is already identified as {st.session_state.user_data['name']} from {st.session_state.user_data['farm']} located at {st.session_state.user_data['location']}, NEVER ask for their name, farm, or address again. Use their profile context automatically.
     3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
     4. Keep responses professional, clear, and actionable. Do not use emojis.
     """
@@ -336,7 +336,6 @@ elif page_selection == "⚙ GLOBAL FEED":
     with col_map:
         st.markdown("### 🗺️ FARM LOCATION MAP")
         st.write(f"Registered Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
-        # Default Cape Town coordinates (approximate operational center) if custom string is used
         map_data = pd.DataFrame({
             'lat': [-33.9249],
             'lon': [18.4241]
@@ -347,7 +346,6 @@ elif page_selection == "⚙ GLOBAL FEED":
         st.markdown("### 📱 OFFICIAL WEBSITE QR CODE")
         st.write("Scan to visit **Seed 2 Harvest** portal:")
         
-        # Generate QR code pointing to website
         qr = qrcode.QRCode(box_size=4, border=2)
         qr.add_data("https://seed2harvest.co.za")
         qr.make(fit=True)
