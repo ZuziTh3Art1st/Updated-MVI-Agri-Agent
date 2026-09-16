@@ -264,7 +264,7 @@ elif page_selection == "❖ CHAT":
             else:
                 try:
                     chat_completion = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="llama-3.1-70b-versatile", # Updated model name here
                         messages=[
                             {"role": "system", "content": SYSTEM_PROMPT},
                             {"role": "user", "content": f"Normalized Input: {normalized_prompt}"}
