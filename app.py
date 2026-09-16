@@ -2,6 +2,8 @@ import os
 import re
 import streamlit as st
 import pandas as pd
+import qrcode
+from io import BytesIO
 from groq import Groq
 import The_Database as db
 
@@ -102,18 +104,6 @@ catalog_context = "\n".join([
     for row in catalog_data
 ])
 
-SYSTEM_PROMPT = f"""
-You are the Seed 2 Harvest Strategic Agent.
-SMME Partner: Shaun Cairns (Cape Town, South Africa).
-
-INSTRUCTIONS:
-1. Ground your advice in the certified product catalog:
-{catalog_context}
-2. MAINTAIN CONTEXT MEMORY: Remember previous products discussed by the user across turns (e.g. if the user previously requested NitroGrow Pellets, keep referencing them).
-3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
-4. Keep responses professional, clear, and actionable. Do not use emojis.
-"""
-
 # ================= SIDEBAR NAVIGATION =================
 with st.sidebar:
     st.markdown("<div class='sidebar-title'>ERTG</div>", unsafe_allow_html=True)
@@ -193,6 +183,25 @@ if not st.session_state.authenticated:
 elif page_selection == "❖ CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
     
+    # Inject authenticated user profile directly into System Prompt so no redundancy is required
+    USER_IDENTITY_PROMPT = f"""
+    You are the Seed 2 Harvest Strategic Agent.
+    SMME Partner: Shaun Cairns (Cape Town, South Africa).
+    
+    CURRENT CLIENT PROFILE (Already Authenticated):
+    - Name: {st.session_state.user_data['name']}
+    - Farm/Company: {st.session_state.user_data['farm']}
+    - Location/Address: {st.session_state.user_data['location']}
+    - Email: {st.session_state.user_data['email']}
+
+    INSTRUCTIONS:
+    1. Ground your advice in the certified product catalog:
+    {catalog_context}
+    2. Since the client is already identified as {st.session_state.user_data['name']} from {st.session_state.user_data['farm']}, never ask for their name or address again. Use their profile context automatically.
+    3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
+    4. Keep responses professional, clear, and actionable. Do not use emojis.
+    """
+
     if not st.session_state.messages:
         st.session_state.messages = [
             {"role": "assistant", "content": f"Welcome back, {st.session_state.user_data['name']}. How can I assist your operations at {st.session_state.user_data['farm']} today?"}
@@ -213,8 +222,7 @@ elif page_selection == "❖ CHAT":
             st.error("SYSTEM ERROR: API connectivity offline.")
         else:
             try:
-                # Format full conversational history into Groq payload to preserve memory across turns
-                conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+                conversation_history = [{"role": "system", "content": USER_IDENTITY_PROMPT}]
                 for m in st.session_state.messages:
                     conversation_history.append({"role": m["role"], "content": m["content"]})
                 
@@ -254,7 +262,7 @@ elif page_selection == "📝 RESERVE ORDER":
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
-        st.text_input("LOCATION", value=st.session_state.user_data["location"], disabled=True)
+        st.text_input("LOCATION / ADDRESS", value=st.session_state.user_data["location"], disabled=True)
     
     with col2:
         st.text_input("CLIENT NAME", value=st.session_state.user_data["name"], disabled=True)
@@ -263,7 +271,7 @@ elif page_selection == "📝 RESERVE ORDER":
 
     st.markdown("### CURRENT BASKET ITEMS")
     if not st.session_state.basket:
-        st.warning("Your basket is empty. Add items from the Catalogue page or select via chat.")
+        st.warning("Your basket is empty. Add items from the Catalogue page.")
     else:
         for item, qty in st.session_state.basket.items():
             st.write(f"- {qty}x {item}")
@@ -277,19 +285,19 @@ elif page_selection == "📝 RESERVE ORDER":
         else:
             st.success("Transaction Successfully Recorded in SQLite Database!")
             
-            # Generate Formal Quotation Document Layout based on Template Structure[cite: 4]
+            # Generate Formal Quotation Document Layout based on Template Structure
             st.markdown(f"""
             <div class="quote-box">
-                <b>SEED 2 HARVEST (PTY) LTD</b>[cite: 4]<br>
-                123 Agricultural Way, Cape Town, 8001[cite: 4]<br>
-                support@seed2harvest.co.za | +27 21 555 0192[cite: 4]<br>
+                <b>SEED 2 HARVEST (PTY) LTD</b><br>
+                123 Agricultural Way, Cape Town, 8001<br>
+                support@seed2harvest.co.za | +27 21 555 0192<br>
                 ------------------------------------------------------------------<br>
                 <b>OFFICIAL QUOTATION & BILLING SUMMARY</b><br><br>
-                <b>BILL TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})[cite: 4]<br>
-                <b>ADDRESS:</b> {st.session_state.user_data['location']}[cite: 4]<br>
-                <b>CONTACT:</b> {phone} | {email_input}[cite: 4]<br>
-                <b>QUOTE NO:</b> #INV00001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}[cite: 4]<br>
-                <b>VALID FOR:</b> 14 days[cite: 4]<br>
+                <b>BILL TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})<br>
+                <b>ADDRESS:</b> {st.session_state.user_data['location']}<br>
+                <b>CONTACT:</b> {phone} | {email_input}<br>
+                <b>QUOTE NO:</b> #INV00001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}<br>
+                <b>VALID FOR:</b> 14 days<br>
                 ------------------------------------------------------------------<br>
                 <b>DESCRIPTION &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; QTY &nbsp;&nbsp;&nbsp; UNIT PRICE &nbsp;&nbsp; TOTAL</b><br>
             """, unsafe_allow_html=True)
@@ -307,13 +315,13 @@ elif page_selection == "📝 RESERVE ORDER":
             
             st.markdown(f"""
                 ------------------------------------------------------------------<br>
-                <b>SUBTOTAL:</b> R {subtotal:.2f}[cite: 4]<br>
-                <b>TAX RATE (15% VAT):</b> R {tax_total:.2f}[cite: 4]<br>
-                <b>SHIPPING / HANDLING:</b> R 0.00[cite: 4]<br>
-                <b>QUOTE TOTAL:</b> R {grand_total:.2f}[cite: 4]<br>
+                <b>SUBTOTAL:</b> R {subtotal:.2f}<br>
+                <b>TAX RATE (15% VAT):</b> R {tax_total:.2f}<br>
+                <b>SHIPPING / HANDLING:</b> R 0.00<br>
+                <b>QUOTE TOTAL:</b> R {grand_total:.2f}<br>
                 ------------------------------------------------------------------<br>
-                <b>Notes & Terms:</b>[cite: 4]<br>
-                - 50% deposit required upon order confirmation; balance due within 30 days[cite: 4].<br>
+                <b>Notes & Terms:</b><br>
+                - 50% deposit required upon order confirmation; balance due within 30 days.<br>
                 - All biological formulations comply with strict ECOCERT safety guidelines.<br>
                 <br>
                 <i>Quotation successfully dispatched to: {email_input}</i>
@@ -321,9 +329,37 @@ elif page_selection == "📝 RESERVE ORDER":
             """, unsafe_allow_html=True)
 
 elif page_selection == "⚙ GLOBAL FEED":
-    st.markdown("<div class='section-header'>GLOBAL FEED & SYSTEM ARCHITECTURE</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>GLOBAL FEED, MAP EXTENSION & PORTAL QR</div>", unsafe_allow_html=True)
+    
+    col_map, col_qr = st.columns(2)
+    
+    with col_map:
+        st.markdown("### 🗺️ FARM LOCATION MAP")
+        st.write(f"Registered Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
+        # Default Cape Town coordinates (approximate operational center) if custom string is used
+        map_data = pd.DataFrame({
+            'lat': [-33.9249],
+            'lon': [18.4241]
+        })
+        st.map(map_data, zoom=10)
+        
+    with col_qr:
+        st.markdown("### 📱 OFFICIAL WEBSITE QR CODE")
+        st.write("Scan to visit **Seed 2 Harvest** portal:")
+        
+        # Generate QR code pointing to website
+        qr = qrcode.QRCode(box_size=4, border=2)
+        qr.add_data("https://seed2harvest.co.za")
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        st.image(buffered.getvalue(), width=180)
+
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-    **ACTIVE SYSTEMS:**
+    **ACTIVE SYSTEMS ARCHITECTURE:**
     - **EA Middleware:** Python runtime translating regional vernacular & normalizing input streams.
     - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
     - **Compliance:** POPIA standards enforced on client data encapsulation.
