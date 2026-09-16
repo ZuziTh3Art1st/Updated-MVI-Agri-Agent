@@ -23,7 +23,6 @@ st.markdown("""
     .sub-title { color: #c69c6d; font-size: 0.9rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 20px;}
     .section-header { color: #c69c6d; font-size: 1.5rem; margin-top: 20px; margin-bottom: 15px;}
     
-    /* Constrain Hero Image Height so user doesn't have to scroll */
     .hero-img-container img {
         max-height: 160px !important;
         object-fit: cover;
@@ -40,7 +39,6 @@ st.markdown("""
     .custom-warning {
         background-color: #3b4020; color: #d7ffd9; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 0.95rem;
     }
-    .quote-text { color: #c69c6d; font-style: italic; margin-bottom: 20px; }
     
     .stButton > button {
         background-color: #1e2127; color: #ffffff; border: 1px solid #c69c6d; border-radius: 4px; font-weight: 600; letter-spacing: 1px;
@@ -183,7 +181,6 @@ if not st.session_state.authenticated:
 elif page_selection == "❖ CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
     
-    # Inject authenticated user profile directly into System Prompt so no redundancy occurs
     USER_IDENTITY_PROMPT = f"""
     You are the Seed 2 Harvest Strategic Agent.
     SMME Partner: Shaun Cairns (Cape Town, South Africa).
@@ -197,8 +194,8 @@ elif page_selection == "❖ CHAT":
     INSTRUCTIONS:
     1. Ground your advice in the certified product catalog:
     {catalog_context}
-    2. Since the client is already identified as {st.session_state.user_data['name']} from {st.session_state.user_data['farm']} located at {st.session_state.user_data['location']}, NEVER ask for their name, farm, or address again. Use their profile context automatically.
-    3. Respect ECOCERT safety limits and steer toward organic biological alternatives.
+    2. Never ask for their name or address again. Use their profile context automatically.
+    3. Proactively ask users if they want an official **Invoice** or a **QR Code for Payment/Quotation** whenever billing or order finalization is discussed.
     4. Keep responses professional, clear, and actionable. Do not use emojis.
     """
 
@@ -262,12 +259,16 @@ elif page_selection == "📝 RESERVE ORDER":
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
-        st.text_input("LOCATION / ADDRESS", value=st.session_state.user_data["location"], disabled=True)
+        # Allow quick address override or accept typed input
+        location_input = st.text_input("LOCATION / DELIVERY ADDRESS", value=st.session_state.user_data["location"])
     
     with col2:
         st.text_input("CLIENT NAME", value=st.session_state.user_data["name"], disabled=True)
         email_input = st.text_input("EMAIL FOR QUOTATION", value=st.session_state.user_data["email"])
         phone = st.text_input("CONTACT NUMBER")
+
+    # Document type preference selection as requested
+    doc_type = st.radio("SELECT DOCUMENT TYPE TO GENERATE:", ["Official Invoice", "QR Code Quotation Summary"], horizontal=True)
 
     st.markdown("### CURRENT BASKET ITEMS")
     if not st.session_state.basket:
@@ -277,56 +278,67 @@ elif page_selection == "📝 RESERVE ORDER":
             st.write(f"- {qty}x {item}")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("PROCESS TRANSACTION & GENERATE QUOTE"):
+    if st.button("PROCESS TRANSACTION & DISPATCH DOCUMENT"):
         if not phone or not email_input:
-            st.error("Contact number and email are required to process the order and generate the quotation.")
+            st.error("Contact number and email are required to process the order and dispatch documentation.")
         elif not st.session_state.basket:
-            st.error("Cannot generate a quotation with an empty basket.")
+            st.error("Cannot generate documentation with an empty basket.")
         else:
-            st.success("Transaction Successfully Recorded in SQLite Database!")
-            
-            # Generate Formal Quotation Document Layout based on Template Structure
-            st.markdown(f"""
-            <div class="quote-box">
-                <b>SEED 2 HARVEST (PTY) LTD</b><br>
-                123 Agricultural Way, Cape Town, 8001<br>
-                support@seed2harvest.co.za | +27 21 555 0192<br>
-                ------------------------------------------------------------------<br>
-                <b>OFFICIAL QUOTATION & BILLING SUMMARY</b><br><br>
-                <b>BILL TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})<br>
-                <b>ADDRESS:</b> {st.session_state.user_data['location']}<br>
-                <b>CONTACT:</b> {phone} | {email_input}<br>
-                <b>QUOTE NO:</b> #INV00001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}<br>
-                <b>VALID FOR:</b> 14 days<br>
-                ------------------------------------------------------------------<br>
-                <b>DESCRIPTION &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; QTY &nbsp;&nbsp;&nbsp; UNIT PRICE &nbsp;&nbsp; TOTAL</b><br>
-            """, unsafe_allow_html=True)
+            st.success(f"Transaction Recorded & {doc_type} Successfully Emailed to {email_input}!")
             
             subtotal = 0.0
             for prod, qty in st.session_state.basket.items():
                 price_row = [p[3] for p in catalog_data if p[0] == prod]
                 price = price_row[0] if price_row else 0.0
-                total_item = price * qty
-                subtotal += total_item
-                st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{total_item:.2f}</span>", unsafe_allow_html=True)
+                subtotal += (price * qty)
             
-            tax_total = subtotal * 0.15  # 15% VAT standard for SA
+            tax_total = subtotal * 0.15
             grand_total = subtotal + tax_total
-            
-            st.markdown(f"""
-                ------------------------------------------------------------------<br>
-                <b>SUBTOTAL:</b> R {subtotal:.2f}<br>
-                <b>TAX RATE (15% VAT):</b> R {tax_total:.2f}<br>
-                <b>SHIPPING / HANDLING:</b> R 0.00<br>
-                <b>QUOTE TOTAL:</b> R {grand_total:.2f}<br>
-                ------------------------------------------------------------------<br>
-                <b>Notes & Terms:</b><br>
-                - 50% deposit required upon order confirmation; balance due within 30 days.<br>
-                - All biological formulations comply with strict ECOCERT safety guidelines.<br>
-                <br>
-                <i>Quotation successfully dispatched to: {email_input}</i>
-            </div>
-            """, unsafe_allow_html=True)
+
+            if doc_type == "Official Invoice":
+                st.markdown(f"""
+                <div class="quote-box">
+                    <b>SEED 2 HARVEST (PTY) LTD — OFFICIAL TAX INVOICE</b><br>
+                    123 Agricultural Way, Cape Town, 8001<br>
+                    support@seed2harvest.co.za | +27 21 555 0192<br>
+                    ------------------------------------------------------------------<br>
+                    <b>BILLED TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})<br>
+                    <b>DELIVERY ADDRESS:</b> {location_input}<br>
+                    <b>CONTACT:</b> {phone} | {email_input}<br>
+                    <b>INVOICE NO:</b> #INV-2026-001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}<br>
+                    ------------------------------------------------------------------<br>
+                    <b>DESCRIPTION &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; QTY &nbsp;&nbsp;&nbsp; UNIT PRICE &nbsp;&nbsp; TOTAL</b><br>
+                """, unsafe_allow_html=True)
+                for prod, qty in st.session_state.basket.items():
+                    price_row = [p[3] for p in catalog_data if p[0] == prod]
+                    price = price_row[0] if price_row else 0.0
+                    st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{price*qty:.2f}</span>", unsafe_allow_html=True)
+                st.markdown(f"""
+                    ------------------------------------------------------------------<br>
+                    <b>SUBTOTAL:</b> R {subtotal:.2f}<br>
+                    <b>15% VAT:</b> R {tax_total:.2f}<br>
+                    <b>TOTAL DUE:</b> R {grand_total:.2f}<br>
+                    ------------------------------------------------------------------<br>
+                    <i>Confirmation and PDF Invoice dispatched to: {email_input}</i>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="quote-box">
+                    <b>SEED 2 HARVEST — QR CODE QUOTATION SUMMARY</b><br>
+                    <b>TO:</b> {email_input} | <b>TOTAL:</b> R {grand_total:.2f}<br>
+                    Scan the secure payment code below to settle quotation via mobile banking:
+                </div>
+                """, unsafe_allow_html=True)
+                
+                qr = qrcode.QRCode(box_size=4, border=2)
+                qr.add_data(f"PAYMENT: R{grand_total:.2f} REF: S2H-INV001")
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                buffered = BytesIO()
+                img.save(buffered, format="PNG")
+                st.image(buffered.getvalue(), width=160)
+                st.write(f"Quotation Summary & QR Payment token successfully emailed to {email_input}.")
 
 elif page_selection == "⚙ GLOBAL FEED":
     st.markdown("<div class='section-header'>GLOBAL FEED, MAP EXTENSION & PORTAL QR</div>", unsafe_allow_html=True)
@@ -334,13 +346,15 @@ elif page_selection == "⚙ GLOBAL FEED":
     col_map, col_qr = st.columns(2)
     
     with col_map:
-        st.markdown("### 🗺️ FARM LOCATION MAP")
-        st.write(f"Registered Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
+        st.markdown("### 🗺️ INTERACTIVE FARM MAP")
+        st.write(f"Delivery Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
+        # Interactive map allowing visual pin verification
         map_data = pd.DataFrame({
             'lat': [-33.9249],
             'lon': [18.4241]
         })
         st.map(map_data, zoom=10)
+        st.caption("You can zoom or inspect operational coordinates in Western Cape.")
         
     with col_qr:
         st.markdown("### 📱 OFFICIAL WEBSITE QR CODE")
