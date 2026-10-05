@@ -44,10 +44,10 @@ st.markdown("""
         background-color: #3b4020; color: #d7ffd9; padding: 12px; border-radius: 5px; margin: 10px 0; font-size: 0.9rem;
     }
 
-    .stButton > button, .stDownloadButton > button {
+    .stButton > button, .stDownloadButton > button, [data-testid="stFormSubmitButton"] > button {
         background-color: #1e2127; color: #ffffff; border: 1px solid #c69c6d; border-radius: 4px; font-weight: 600; letter-spacing: 1px;
     }
-    .stButton > button:hover, .stDownloadButton > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
+    .stButton > button:hover, .stDownloadButton > button:hover, [data-testid="stFormSubmitButton"] > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
 
     [data-testid="stSidebar"] { background-color: #16181c; border-right: 1px solid #333; }
     .sidebar-title { color: #c69c6d; font-size: 1.1rem; font-weight: bold; margin-bottom: 15px;}
@@ -442,28 +442,35 @@ if not st.session_state.authenticated:
 
     col_form, _ = st.columns([2, 1])
     with col_form:
-        client_name = st.text_input("NAME", key="onboard_name")
-        client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
-        client_location = st.text_input("LOCATION", key="onboard_loc")
-        client_email = st.text_input("EMAIL ADDRESS", key="onboard_email")
+        # st.form submits every field's current value in one go, so browser autofill is captured.
+        with st.form("onboarding_form", clear_on_submit=False, border=False):
+            client_name = st.text_input("NAME", key="onboard_name")
+            client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
+            client_location = st.text_input("LOCATION", key="onboard_loc")
+            client_email = st.text_input("EMAIL ADDRESS", key="onboard_email")
 
-        st.markdown("""
-        <div class="custom-warning">
-            Hello fellow farmer. For the agent to work effectively we need permission to work with your data. Click yes to continue or leave.
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("""
+            <div class="custom-warning">
+                Hello fellow farmer. For the agent to work effectively we need permission to work with your data. Click yes to continue or leave.
+            </div>
+            """, unsafe_allow_html=True)
 
-        permission = st.checkbox("I GRANT PERMISSION")
+            permission = st.checkbox("I GRANT PERMISSION")
+            submitted = st.form_submit_button("AUTHORIZE ENTRY")
 
-        if st.button("AUTHORIZE ENTRY"):
-            if client_name and client_farm and client_location and client_email and permission:
+        if submitted:
+            client_name, client_farm = client_name.strip(), client_farm.strip()
+            client_location, client_email = client_location.strip(), client_email.strip()
+            if not (client_name and client_farm and client_location and client_email and permission):
+                st.error("Please complete all fields, provide an email address, and grant permission to proceed.")
+            elif "@" not in client_email or "." not in client_email.split("@")[-1]:
+                st.error("Please enter a valid email address.")
+            else:
                 st.session_state.user_data = {
                     "name": client_name, "farm": client_farm, "location": client_location, "email": client_email
                 }
                 st.session_state.authenticated = True
                 st.rerun()
-            else:
-                st.error("Please complete all fields, provide an email address, and grant permission to proceed.")
 
 elif page_selection == "CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
