@@ -232,10 +232,12 @@ def send_email_smtp(to_addr, subject, html_body, text_body, qr_png=None):
 
 
 def send_email(to_addr, subject, html_body, text_body, qr_png=None):
-    """Use Brevo (HTTPS) when configured, otherwise fall back to SMTP."""
+    """Use Brevo (HTTPS) when configured, otherwise fall back to SMTP. The method is named in errors."""
     if get_secret("BREVO_API_KEY"):
-        return send_email_brevo(to_addr, subject, html_body, text_body, qr_png)
-    return send_email_smtp(to_addr, subject, html_body, text_body, qr_png)
+        ok, info = send_email_brevo(to_addr, subject, html_body, text_body, qr_png)
+        return ok, info if ok else f"[via Brevo] {info}"
+    ok, info = send_email_smtp(to_addr, subject, html_body, text_body, qr_png)
+    return ok, info if ok else f"[via Gmail SMTP, BREVO_API_KEY not found] {info}"
 
 
 # ================= GROQ CLIENT SETUP =================
