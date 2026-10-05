@@ -11,7 +11,7 @@ from io import BytesIO
 from groq import Groq
 import The_Database as db
 
-# ================= PAGE CONFIG & STYLING =================
+#  PAGE CONFIG & STYLING
 st.set_page_config(
     page_title="Seed 2 Harvest | Strategic Agent",
     layout="wide",
