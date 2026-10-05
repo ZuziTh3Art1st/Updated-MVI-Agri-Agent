@@ -88,6 +88,9 @@ if "last_document" not in st.session_state: st.session_state.last_document = Non
 
 
 # ================= HELPERS =================
+# Shown when the quotation QR code is scanned. Replace with your real banking details or payment link.
+PAYMENT_INSTRUCTIONS = "Pay by EFT, use Ref as reference. Queries: support@seed2harvest.co.za"
+
 def get_secret(name, default=None):
     """Read from environment first, then Streamlit secrets."""
     val = os.environ.get(name)
@@ -244,7 +247,18 @@ def generate_and_send(doc_type, location_input, phone, email_input):
             <b>TOTAL DUE:</b> R {grand_total:.2f}
         </div>"""
     else:
-        qr_png = make_qr_png(f"PAYMENT: R{grand_total:.2f} REF: {inv_no}")
+        qr_lines = [
+            "SEED 2 HARVEST - QUOTATION",
+            f"Ref: {inv_no}",
+        ]
+        qr_lines += [f"{q}x {p} = R{price_map.get(p, 0.0) * q:.2f}" for p, q in active_items]
+        qr_lines += [
+            f"Subtotal: R{subtotal:.2f}",
+            f"VAT 15%: R{tax_total:.2f}",
+            f"TOTAL DUE: R{grand_total:.2f}",
+            PAYMENT_INSTRUCTIONS,
+        ]
+        qr_png = make_qr_png("\n".join(qr_lines), box_size=6)
         doc_html = f"""
         <div class="quote-box">
             <b>SEED 2 HARVEST — QR CODE QUOTATION SUMMARY</b><br>
@@ -254,7 +268,7 @@ def generate_and_send(doc_type, location_input, phone, email_input):
                 {rows_html}
             </table>
             <b>TOTAL (incl. 15% VAT):</b> R {grand_total:.2f}<br>
-            Scan the payment code below to settle the quotation via mobile banking.
+            Scan the code below with your phone camera to see this quotation and the payment reference.
         </div>"""
 
     email_html = f"""
@@ -572,7 +586,7 @@ elif page_selection == "RESERVE ORDER":
         render_email_status(doc)
         st.markdown(doc["doc_html"], unsafe_allow_html=True)
         if doc["qr_png"]:
-            st.image(doc["qr_png"], width=180)
+            st.image(doc["qr_png"], width=260)
         st.download_button(
             "DOWNLOAD DOCUMENT (HTML)",
             data=doc["email_html"].encode("utf-8"),
