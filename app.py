@@ -1,16 +1,13 @@
 import os
 import re
-import ssl
 import html
 import base64
 from urllib.parse import quote
-import smtplib
 import requests
 import streamlit as st
 import pandas as pd
 import qrcode
 from io import BytesIO
-from email.message import EmailMessage
 from groq import Groq
 import The_Database as db
 
@@ -166,87 +163,6 @@ def load_banner_html(path="images/maxresdefault.jpg"):
         return "<div class='hero-placeholder'></div>"
 
 
-def send_email_brevo(to_addr, subject, html_body, text_body, qr_png=None):
-    """Send over HTTPS using the Brevo API (works on hosts that block SMTP)."""
-    api_key = get_secret("BREVO_API_KEY")
-    sender_email = get_secret("BREVO_SENDER_EMAIL")
-    sender_name = get_secret("BREVO_SENDER_NAME", "Seed 2 Harvest")
-    if not api_key or not sender_email:
-        return False, "Brevo is not configured. Add BREVO_API_KEY and BREVO_SENDER_EMAIL to your Streamlit secrets."
-
-    payload = {
-        "sender": {"name": sender_name, "email": sender_email},
-        "to": [{"email": to_addr}],
-        "subject": subject,
-        "htmlContent": html_body,
-        "textContent": text_body,
-    }
-    if qr_png:
-        payload["attachment"] = [{"name": "payment_qr.png", "content": base64.b64encode(qr_png).decode()}]
-
-    try:
-        r = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={"api-key": api_key, "accept": "application/json", "content-type": "application/json"},
-            json=payload, timeout=20
-        )
-        if r.status_code in (200, 201, 202):
-            return True, "Sent"
-        try:
-            detail = r.json().get("message", r.text)
-        except Exception:
-            detail = r.text
-        return False, f"Brevo rejected the email ({r.status_code}): {detail}"
-    except Exception as e:
-        return False, f"Email failed: {e}"
-
-
-def send_email_smtp(to_addr, subject, html_body, text_body, qr_png=None):
-    """Send via SMTP. Returns (ok: bool, message: str)."""
-    host = get_secret("SMTP_HOST", "smtp.gmail.com")
-    port = int(get_secret("SMTP_PORT", 465))
-    user = get_secret("SMTP_USER")
-    password = get_secret("SMTP_PASSWORD")
-    sender = get_secret("SMTP_SENDER", user)
-
-    if not user or not password:
-        return False, "Email is not configured. Add BREVO_API_KEY (recommended) or SMTP_USER and SMTP_PASSWORD to your Streamlit secrets."
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = to_addr
-    msg.set_content(text_body)
-    msg.add_alternative(html_body, subtype="html")
-    if qr_png:
-        msg.add_attachment(qr_png, maintype="image", subtype="png", filename="payment_qr.png")
-
-    try:
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context(), timeout=20) as server:
-                server.login(user, password)
-                server.send_message(msg)
-        else:
-            with smtplib.SMTP(host, port, timeout=20) as server:
-                server.starttls(context=ssl.create_default_context())
-                server.login(user, password)
-                server.send_message(msg)
-        return True, "Sent"
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP login failed. For Gmail you must use an App Password, not your normal password."
-    except Exception as e:
-        return False, f"Email failed: {e}"
-
-
-def send_email(to_addr, subject, html_body, text_body, qr_png=None):
-    """Use Brevo (HTTPS) when configured, otherwise fall back to SMTP. The method is named in errors."""
-    if get_secret("BREVO_API_KEY"):
-        ok, info = send_email_brevo(to_addr, subject, html_body, text_body, qr_png)
-        return ok, info if ok else f"[via Brevo] {info}"
-    ok, info = send_email_smtp(to_addr, subject, html_body, text_body, qr_png)
-    return ok, info if ok else f"[via Gmail SMTP, BREVO_API_KEY not found] {info}"
-
-
 # ================= GROQ CLIENT SETUP =================
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -363,14 +279,7 @@ def generate_and_send(doc_type, location_input, phone, email_input):
         f"Total payable: R{grand_total:.2f}\n\nSeed 2 Harvest"
     )
 
-    configured = bool(get_secret("BREVO_API_KEY")) or bool(get_secret("SMTP_USER") and get_secret("SMTP_PASSWORD"))
-    if configured:
-        with st.spinner("Sending email..."):
-            ok, info = send_email(email_input, "SEED2HARVEST ORDER INFORMATION", email_html, email_text, qr_png)
-    else:
-        ok, info = False, "NOT_CONFIGURED"
-
-    # Fallback that needs no account or key: opens the person's own email app with the message filled in.
+    # Opens the person's own email app with the message filled in. No account or API key needed.
     mailto_url = (
         f"mailto:{quote(email_input)}"
         f"?cc={quote('support@seed2harvest.co.za')}"
@@ -380,20 +289,14 @@ def generate_and_send(doc_type, location_input, phone, email_input):
 
     st.session_state.last_document = {
         "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no, "email_html": email_html,
-        "ok": ok, "info": info, "to": email_input, "doc_type": doc_type, "mailto": mailto_url
+        "to": email_input, "doc_type": doc_type, "mailto": mailto_url
     }
     return st.session_state.last_document
 
 
 def render_email_status(doc):
-    """Show whether the email went out, and offer the open-in-email-app fallback when it did not."""
-    if doc["ok"]:
-        st.success(f"{doc['doc_type']} emailed to {doc['to']}.")
-        return
-    if doc["info"] == "NOT_CONFIGURED":
-        st.info("Automatic email sending is not switched on for this app. Use the button below to send it from your own email app, or download the document.")
-    else:
-        st.error(f"{doc['info']} You can still send it from your own email app with the button below.")
+    """Offer the open-in-email-app button for the generated document."""
+    st.success(f"{doc['doc_type']} ready. Press the button below to send it from your own email app.")
     st.markdown(f"<a class='mailto-btn' href='{doc['mailto']}'>OPEN IN YOUR EMAIL APP</a>", unsafe_allow_html=True)
     st.caption(f"Opens a ready-written email to {doc['to']} with Seed 2 Harvest support copied in. Press send in your email app to finish.")
 
@@ -449,7 +352,7 @@ FEATURES = [
     ("LIVE CATALOGUE", "Browse products with current stock and pricing. Set quantities and your basket updates instantly in the sidebar."),
     ("SMART BASKET", "Your basket is shared across every page and the agent can see it, so you can ask for advice or a quote on exactly what you picked."),
     ("INVOICES & QUOTES", "Generate an official tax invoice (15% VAT) or a QR code quotation summary, and download it or have it emailed to you."),
-    ("EMAIL DISPATCH", "Documents are sent to your email address with the subject SEED2HARVEST ORDER INFORMATION. You only see a success message if the email was actually delivered to the mail server."),
+    ("EMAIL YOUR DOCUMENT", "One button opens your own email app with the invoice or quotation already written and addressed, subject SEED2HARVEST ORDER INFORMATION. Seed 2 Harvest support is copied in."),
     ("FARM MAP", "The Global Feed page maps your delivery location so you can confirm where your order is going."),
     ("PORTAL QR", "Scan the QR code to open the Seed 2 Harvest portal on your phone."),
     ("POPIA COMPLIANT", "Your details are only used to run your session and process your orders, in line with POPIA."),
@@ -528,7 +431,7 @@ elif page_selection == "CHAT":
     {catalog_context}
     2. Never ask for their name or address again. Use their profile context automatically.
     3. You can see the basket above. When the client says "from my basket" or "the basket", use those items and totals. Never ask them to re-list basket items.
-    4. You cannot send emails or generate files yourself. When the client wants an invoice or a QR code quotation, confirm the basket contents and total, then tell them a send button will appear below the chat to email it to {st.session_state.user_data['email']}. Never claim an email has already been sent.
+    4. You cannot send emails or generate files yourself. When the client wants an invoice or a QR code quotation, confirm the basket contents and total, then tell them a button will appear below the chat to prepare the document, and that they send it from their own email app to {st.session_state.user_data['email']}. Never claim an email has already been sent.
     5. Keep responses professional, clear, and actionable. Do not use emojis.
     """
 
@@ -579,14 +482,14 @@ elif page_selection == "CHAT":
         st.markdown("---")
         st.markdown("<div class='section-header'>SEND DOCUMENT FROM BASKET</div>", unsafe_allow_html=True)
         _, _, _gt = basket_totals()
-        st.caption(f"Basket total incl. VAT: R{_gt:.2f}. Will be sent to {st.session_state.user_data['email']}.")
+        st.caption(f"Basket total incl. VAT: R{_gt:.2f}. It will be addressed to {st.session_state.user_data['email']}.")
         chat_doc_type = st.radio(
             "Document type", ["Official Invoice", "QR Code Quotation Summary"],
             horizontal=True, key="chat_doc_type"
         )
         chat_phone = st.text_input("Contact number (optional)", key="chat_phone")
-        if st.button(f"SEND {chat_doc_type.upper()} TO {st.session_state.user_data['email'].upper()}", key="chat_send_btn"):
-            with st.spinner("Sending email..."):
+        if st.button(f"PREPARE {chat_doc_type.upper()}", key="chat_send_btn"):
+            with st.spinner("Preparing document..."):
                 result = generate_and_send(
                     chat_doc_type,
                     st.session_state.user_data["location"],
@@ -594,8 +497,7 @@ elif page_selection == "CHAT":
                     st.session_state.user_data["email"]
                 )
             render_email_status(result)
-            if not result["ok"]:
-                st.caption("The full document can be downloaded on the RESERVE ORDER page.")
+            st.caption("The full document can also be downloaded on the RESERVE ORDER page.")
 
 elif page_selection == "CATALOGUE":
     st.markdown("<div class='section-header'>PRODUCT CATALOGUE & REAL-TIME BASKET</div>", unsafe_allow_html=True)
@@ -640,7 +542,7 @@ elif page_selection == "RESERVE ORDER":
             st.write(f"- {qty}x {item}")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("PROCESS TRANSACTION & DISPATCH DOCUMENT"):
+    if st.button("PROCESS TRANSACTION & PREPARE DOCUMENT"):
         if not phone or not email_input:
             st.error("Contact number and email are required to process the order and dispatch documentation.")
         elif not active_items:
@@ -706,7 +608,7 @@ elif page_selection == "FEATURES":
     1. Open **CATALOGUE** and set quantities. Your basket fills in the sidebar.
     2. Ask the **CHAT** agent for advice on dosage or what suits your crop.
     3. Open **RESERVE ORDER**, enter your contact number and pick Invoice or QR Quotation.
-    4. Press **PROCESS TRANSACTION**. The document is emailed to you and can be downloaded.
+    4. Press **PROCESS TRANSACTION**. Then use the email button to send it from your own email app, or download the document.
     """)
 
 # ================= FOOTER =================
