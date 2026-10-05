@@ -1,16 +1,21 @@
 import os
 import re
+import ssl
+import html
+import base64
+import smtplib
+import requests
 import streamlit as st
 import pandas as pd
 import qrcode
 from io import BytesIO
+from email.message import EmailMessage
 from groq import Groq
 import The_Database as db
 
 # ================= PAGE CONFIG & STYLING =================
 st.set_page_config(
     page_title="Seed 2 Harvest | Strategic Agent",
-    page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -22,42 +27,46 @@ st.markdown("""
     .main-title { color: #ffffff; font-size: 2rem; line-height: 1.1; margin-bottom: 0px; margin-top: 5px;}
     .sub-title { color: #c69c6d; font-size: 0.8rem; letter-spacing: 3px; font-weight: 600; margin-bottom: 10px;}
     .section-header { color: #c69c6d; font-size: 1.3rem; margin-top: 10px; margin-bottom: 10px;}
-    
-    /* Tightly constrain Hero Image Height so it acts as a neat header banner */
-    .hero-img-container img {
-        max-height: 90px !important;
-        object-fit: cover;
-        width: 100%;
-        border-radius: 4px;
-        border: 1px solid #333;
+
+    /* Hero banner: rendered as a single <img> so the height limit really applies */
+    .hero-banner {
+        width: 100%; height: 110px; object-fit: cover; object-position: center;
+        border-radius: 4px; border: 1px solid #333; display: block;
     }
-    
+    .hero-placeholder { height: 60px; background-color: #1a1e23; border: 1px solid #333; border-radius: 4px; }
+
     .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
         background-color: #1e2127; color: #ffffff; border: 1px solid #333333;
     }
     .stTextInput > div > div > input:focus { border-color: #c69c6d; box-shadow: none; }
-    
+
     .custom-warning {
         background-color: #3b4020; color: #d7ffd9; padding: 12px; border-radius: 5px; margin: 10px 0; font-size: 0.9rem;
     }
-    
-    .stButton > button {
+
+    .stButton > button, .stDownloadButton > button {
         background-color: #1e2127; color: #ffffff; border: 1px solid #c69c6d; border-radius: 4px; font-weight: 600; letter-spacing: 1px;
     }
-    .stButton > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
-    
+    .stButton > button:hover, .stDownloadButton > button:hover { background-color: #c69c6d; color: #000000; border: 1px solid #c69c6d; }
+
     [data-testid="stSidebar"] { background-color: #16181c; border-right: 1px solid #333; }
     .sidebar-title { color: #c69c6d; font-size: 1.1rem; font-weight: bold; margin-bottom: 15px;}
     .sidebar-subtitle { color: #888888; font-size: 0.7rem; letter-spacing: 1px; margin-bottom: 8px;}
-    
+
     .quote-box {
         background-color: #16181c; border: 2px solid #c69c6d; padding: 20px; border-radius: 6px; font-family: monospace; color: #fff; margin-top: 15px;
     }
-    
-    .email-preview-box {
-        background-color: #1a1e24; border: 1px dashed #c69c6d; padding: 15px; border-radius: 6px; margin-top: 15px; color: #e0e0e0; font-family: monospace;
+    .quote-box table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .quote-box th { text-align: left; color: #c69c6d; border-bottom: 1px solid #444; padding: 4px; }
+    .quote-box td { padding: 4px; border-bottom: 1px solid #2a2d33; }
+
+    .feature-card {
+        background-color: #16181c; border: 1px solid #333; border-left: 3px solid #c69c6d;
+        padding: 14px 16px; border-radius: 6px; margin-bottom: 12px; min-height: 120px;
     }
-    
+    .feature-card h4 { color: #c69c6d; margin: 0 0 6px 0; font-size: 1rem; letter-spacing: 1px; }
+    .feature-card p { color: #d0d0d0; margin: 0; font-size: 0.88rem; line-height: 1.45; }
+
     .footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #333; }
     .footer h4 { color: #c69c6d; margin: 0; font-size: 1rem; letter-spacing: 2px;}
     .footer p { color: #666666; font-size: 0.7rem; letter-spacing: 1px; margin-top: 3px;}
@@ -71,8 +80,21 @@ if "authenticated" not in st.session_state: st.session_state.authenticated = Fal
 if "user_data" not in st.session_state: st.session_state.user_data = {"name": "", "farm": "", "location": "", "email": ""}
 if "messages" not in st.session_state: st.session_state.messages = []
 if "basket" not in st.session_state: st.session_state.basket = {}
+if "last_document" not in st.session_state: st.session_state.last_document = None
 
-# ================= APPLICATION MIDDLEWARE =================
+
+# ================= HELPERS =================
+def get_secret(name, default=None):
+    """Read from environment first, then Streamlit secrets."""
+    val = os.environ.get(name)
+    if val:
+        return val
+    try:
+        return st.secrets[name]
+    except Exception:
+        return default
+
+
 class AgriculturalMiddleware:
     SLANG_DICTIONARY = {
         r"\bblaarbrand\b": "leaf scorch / fungal burn",
@@ -94,92 +116,303 @@ class AgriculturalMiddleware:
             normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
         return normalized
 
-# ================= GROQ CLIENT SETUP =================
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-if not GROQ_API_KEY and "GROQ_API_KEY" in st.secrets:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
+@st.cache_data(show_spinner=False, ttl=86400)
+def geocode_location(query: str):
+    """Turn the client's typed location into lat/lon using OpenStreetMap Nominatim."""
+    if not query or not query.strip():
+        return None
+    headers = {"User-Agent": "seed2harvest-streamlit-app/1.0"}
+    for q in (query, f"{query}, South Africa"):
+        try:
+            r = requests.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": q, "format": "json", "limit": 1},
+                headers=headers, timeout=8
+            )
+            data = r.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"]), data[0].get("display_name", q)
+        except Exception:
+            continue
+    return None
+
+
+def make_qr_png(data: str, box_size=5) -> bytes:
+    qr = qrcode.QRCode(version=None, box_size=box_size, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def load_banner_html(path="images/maxresdefault.jpg"):
+    try:
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        ext = path.rsplit(".", 1)[-1].lower()
+        mime = "image/png" if ext == "png" else "image/jpeg"
+        return f"<img class='hero-banner' src='data:{mime};base64,{b64}'/>"
+    except Exception:
+        return "<div class='hero-placeholder'></div>"
+
+
+def send_email(to_addr, subject, html_body, text_body, qr_png=None):
+    """Send via SMTP. Returns (ok: bool, message: str)."""
+    host = get_secret("SMTP_HOST", "smtp.gmail.com")
+    port = int(get_secret("SMTP_PORT", 465))
+    user = get_secret("SMTP_USER")
+    password = get_secret("SMTP_PASSWORD")
+    sender = get_secret("SMTP_SENDER", user)
+
+    if not user or not password:
+        return False, "Email is not configured. Add SMTP_USER and SMTP_PASSWORD to your Streamlit secrets."
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = to_addr
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+    if qr_png:
+        msg.add_attachment(qr_png, maintype="image", subtype="png", filename="payment_qr.png")
+
+    try:
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context(), timeout=20) as server:
+                server.login(user, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=20) as server:
+                server.starttls(context=ssl.create_default_context())
+                server.login(user, password)
+                server.send_message(msg)
+        return True, "Sent"
+    except smtplib.SMTPAuthenticationError:
+        return False, "SMTP login failed. For Gmail you must use an App Password, not your normal password."
+    except Exception as e:
+        return False, f"Email failed: {e}"
+
+
+# ================= GROQ CLIENT SETUP =================
+GROQ_API_KEY = get_secret("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 catalog_data = db.fetch_inventory()
+price_map = {row[0]: row[3] for row in catalog_data}
 catalog_context = "\n".join([
     f"- Product: {row[0]} | Category: {row[1]} | Stock: {row[2]} units | Price: R{row[3]:.2f} | Safe Usage: {row[4]}"
     for row in catalog_data
 ])
 
+
+def basket_totals():
+    subtotal = sum(price_map.get(p, 0.0) * q for p, q in st.session_state.basket.items() if q > 0)
+    vat = subtotal * 0.15
+    return subtotal, vat, subtotal + vat
+
+
+def basket_context() -> str:
+    items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
+    if not items:
+        return "The client's basket is currently EMPTY."
+    lines = [f"- {q}x {p} @ R{price_map.get(p, 0.0):.2f} = R{price_map.get(p, 0.0) * q:.2f}" for p, q in items]
+    subtotal, vat, total = basket_totals()
+    lines.append(f"Subtotal: R{subtotal:.2f} | VAT (15%): R{vat:.2f} | Total: R{total:.2f}")
+    return "\n".join(lines)
+
+
+def set_basket_qty(product_name):
+    """on_change callback for catalogue quantity inputs."""
+    qty = st.session_state.get(f"cat_{product_name}", 0)
+    if qty and qty > 0:
+        st.session_state.basket[product_name] = int(qty)
+    else:
+        st.session_state.basket.pop(product_name, None)
+
+
+def clear_basket():
+    st.session_state.basket = {}
+    # reset catalogue widgets too, otherwise they would re-add the old quantities
+    for k in [k for k in st.session_state.keys() if k.startswith("cat_")]:
+        del st.session_state[k]
+
+
+def generate_and_send(doc_type, location_input, phone, email_input):
+    """Build the invoice / QR quotation from the live basket, email it, and store it for display."""
+    active_items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
+    subtotal, tax_total, grand_total = basket_totals()
+    now = pd.Timestamp.now()
+    inv_no = f"INV-{now.strftime('%Y%m%d-%H%M%S')}"
+    date_str = now.strftime('%Y-%m-%d')
+
+    e = html.escape
+    rows_html = "".join(
+        f"<tr><td>{e(p)}</td><td>{q}</td><td>R{price_map.get(p, 0.0):.2f}</td><td>R{price_map.get(p, 0.0) * q:.2f}</td></tr>"
+        for p, q in active_items
+    )
+    rows_text = "\n".join(
+        f"  {q}x {p} @ R{price_map.get(p, 0.0):.2f} = R{price_map.get(p, 0.0) * q:.2f}" for p, q in active_items
+    )
+
+    qr_png = None
+    if doc_type == "Official Invoice":
+        doc_html = f"""
+        <div class="quote-box">
+            <b>SEED 2 HARVEST (PTY) LTD — OFFICIAL TAX INVOICE</b><br>
+            123 Agricultural Way, Cape Town, 8001<br>
+            support@seed2harvest.co.za | +27 21 555 0192<hr>
+            <b>BILLED TO:</b> {e(st.session_state.user_data['name'])} ({e(st.session_state.user_data['farm'])})<br>
+            <b>DELIVERY ADDRESS:</b> {e(location_input)}<br>
+            <b>CONTACT:</b> {e(phone)} | {e(email_input)}<br>
+            <b>INVOICE NO:</b> {inv_no} &nbsp;|&nbsp; <b>DATE:</b> {date_str}
+            <table>
+                <tr><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th>TOTAL</th></tr>
+                {rows_html}
+            </table>
+            <b>SUBTOTAL:</b> R {subtotal:.2f}<br>
+            <b>15% VAT:</b> R {tax_total:.2f}<br>
+            <b>TOTAL DUE:</b> R {grand_total:.2f}
+        </div>"""
+    else:
+        qr_png = make_qr_png(f"PAYMENT: R{grand_total:.2f} REF: {inv_no}")
+        doc_html = f"""
+        <div class="quote-box">
+            <b>SEED 2 HARVEST — QR CODE QUOTATION SUMMARY</b><br>
+            <b>REF:</b> {inv_no} | <b>TO:</b> {e(email_input)}
+            <table>
+                <tr><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th>TOTAL</th></tr>
+                {rows_html}
+            </table>
+            <b>TOTAL (incl. 15% VAT):</b> R {grand_total:.2f}<br>
+            Scan the payment code below to settle the quotation via mobile banking.
+        </div>"""
+
+    email_html = f"""
+    <html><body style="font-family:Arial,sans-serif;color:#222;">
+    <p>Dear {e(st.session_state.user_data['name'])},</p>
+    <p>Please find your requested <b>{e(doc_type.lower())}</b> for your order at {e(st.session_state.user_data['farm'])}.</p>
+    <p><b>Reference:</b> {inv_no}<br><b>Date:</b> {date_str}<br><b>Delivery address:</b> {e(location_input)}<br><b>Contact:</b> {e(phone)}</p>
+    <table style="border-collapse:collapse;width:100%;max-width:560px;" border="1" cellpadding="6">
+      <tr style="background:#f0e6d8;"><th align="left">Description</th><th>Qty</th><th>Unit</th><th>Total</th></tr>
+      {rows_html}
+    </table>
+    <p>Subtotal: R{subtotal:.2f}<br>VAT (15%): R{tax_total:.2f}<br><b>Total payable: R{grand_total:.2f}</b></p>
+    {"<p>A payment QR code is attached to this email.</p>" if qr_png else ""}
+    <p>Regards,<br>Seed 2 Harvest<br>support@seed2harvest.co.za</p>
+    </body></html>"""
+
+    email_text = (
+        f"Dear {st.session_state.user_data['name']},\n\n"
+        f"Your {doc_type.lower()} for {st.session_state.user_data['farm']}.\n"
+        f"Reference: {inv_no}\nDate: {date_str}\nDelivery: {location_input}\n\n"
+        f"{rows_text}\n\nSubtotal: R{subtotal:.2f}\nVAT (15%): R{tax_total:.2f}\n"
+        f"Total payable: R{grand_total:.2f}\n\nSeed 2 Harvest"
+    )
+
+    with st.spinner("Sending email..."):
+        ok, info = send_email(email_input, "SEED2HARVEST ORDER INFORMATION", email_html, email_text, qr_png)
+
+    st.session_state.last_document = {
+        "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no,
+        "email_html": email_html, "ok": ok, "info": info, "to": email_input, "doc_type": doc_type
+    }
+    return st.session_state.last_document
+
+
 # ================= SIDEBAR NAVIGATION & REAL-TIME BASKET =================
 with st.sidebar:
     st.markdown("<div class='sidebar-title'>ERTG</div>", unsafe_allow_html=True)
     st.markdown("<div class='sidebar-subtitle'>OPERATIONS</div>", unsafe_allow_html=True)
-    
+
     if st.session_state.authenticated:
         page_selection = st.radio(
-            "Navigate", 
-            ["❖ CHAT", "☷ CATALOGUE", "📝 RESERVE ORDER", "⚙ GLOBAL FEED"],
+            "Navigate",
+            ["CHAT", "CATALOGUE", "RESERVE ORDER", "GLOBAL FEED", "FEATURES"],
             label_visibility="collapsed"
         )
     else:
         page_selection = "ONBOARDING"
         st.caption("Please authenticate to access operations.")
-        
+
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<div class='sidebar-title'>⛟ YOUR BASKET</div>", unsafe_allow_html=True)
-    
-    # Render basket items in real time
-    total_basket_items = 0
-    if not st.session_state.basket:
+    st.markdown("<div class='sidebar-title'>YOUR BASKET</div>", unsafe_allow_html=True)
+
+    active_items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
+    if not active_items:
         st.write("Empty")
     else:
-        for prod, qty in st.session_state.basket.items():
-            if qty > 0:
-                st.write(f"- {qty}x {prod}")
-                total_basket_items += qty
-        if total_basket_items == 0:
-            st.write("Empty")
-            
+        for prod, qty in active_items:
+            st.write(f"- {qty}x {prod}")
+        _, _, _total = basket_totals()
+        st.caption(f"Total incl. VAT: R{_total:.2f}")
+
     if st.button("CLEAR BASKET"):
-        st.session_state.basket = {}
+        clear_basket()
         st.toast("Basket Cleared")
         st.rerun()
-        
+
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("TERMINATE"):
         st.session_state.authenticated = False
         st.session_state.messages = []
-        st.session_state.basket = {}
+        clear_basket()
+        st.session_state.last_document = None
         st.rerun()
 
 # ================= COMPACT MAIN HEADER =================
-st.markdown("<div class='hero-img-container'>", unsafe_allow_html=True)
-try:
-    st.image("images/maxresdefault.jpg", use_container_width=True)
-except Exception:
-    st.markdown("<div style='height: 50px; background-color: #1a1e23; border: 1px solid #333;'></div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
+st.markdown(load_banner_html(), unsafe_allow_html=True)
 st.markdown("<div class='main-title'>SEED 2 HARVEST</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>ELEVATE YOUR EVERYDAY</div>", unsafe_allow_html=True)
+
+# ================= FEATURES CONTENT (shared) =================
+FEATURES = [
+    ("STRATEGIC AGENT", "Chat with an AI advisor grounded in our certified product catalogue. It knows your farm profile and what is in your basket, and understands Afrikaans farming slang."),
+    ("LIVE CATALOGUE", "Browse products with current stock and pricing. Set quantities and your basket updates instantly in the sidebar."),
+    ("SMART BASKET", "Your basket is shared across every page and the agent can see it, so you can ask for advice or a quote on exactly what you picked."),
+    ("INVOICES & QUOTES", "Generate an official tax invoice (15% VAT) or a QR code quotation summary, and download it or have it emailed to you."),
+    ("EMAIL DISPATCH", "Documents are sent to your email address with the subject SEED2HARVEST ORDER INFORMATION. You only see a success message if the email was actually delivered to the mail server."),
+    ("FARM MAP", "The Global Feed page maps your delivery location so you can confirm where your order is going."),
+    ("PORTAL QR", "Scan the QR code to open the Seed 2 Harvest portal on your phone."),
+    ("POPIA COMPLIANT", "Your details are only used to run your session and process your orders, in line with POPIA."),
+]
+
+
+def render_features():
+    cols = st.columns(2)
+    for i, (title, desc) in enumerate(FEATURES):
+        with cols[i % 2]:
+            st.markdown(
+                f"<div class='feature-card'><h4>{title}</h4><p>{desc}</p></div>",
+                unsafe_allow_html=True
+            )
+
 
 # ================= VIEWS =================
 
 if not st.session_state.authenticated:
-    st.markdown("<div class='section-header'>❖ CLIENT ONBOARDING</div>", unsafe_allow_html=True)
-    
+    st.markdown("<div class='section-header'>CLIENT ONBOARDING</div>", unsafe_allow_html=True)
+
+    with st.expander("WHAT CAN THIS APP DO?", expanded=False):
+        render_features()
+
     col_form, _ = st.columns([2, 1])
     with col_form:
         client_name = st.text_input("NAME", key="onboard_name")
         client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
         client_location = st.text_input("LOCATION", key="onboard_loc")
         client_email = st.text_input("EMAIL ADDRESS", key="onboard_email")
-        
+
         st.markdown("""
         <div class="custom-warning">
             Hello fellow farmer. For the agent to work effectively we need permission to work with your data. Click yes to continue or leave.
         </div>
         """, unsafe_allow_html=True)
-        
+
         permission = st.checkbox("I GRANT PERMISSION")
-        
+
         if st.button("AUTHORIZE ENTRY"):
             if client_name and client_farm and client_location and client_email and permission:
                 st.session_state.user_data = {
@@ -190,25 +423,30 @@ if not st.session_state.authenticated:
             else:
                 st.error("Please complete all fields, provide an email address, and grant permission to proceed.")
 
-elif page_selection == "❖ CHAT":
+elif page_selection == "CHAT":
     st.markdown("<div class='section-header'>STRATEGIC AGENT</div>", unsafe_allow_html=True)
-    
+
+    # Built on every rerun, so the basket section is always current.
     USER_IDENTITY_PROMPT = f"""
     You are the Seed 2 Harvest Strategic Agent.
     SMME Partner: Shaun Cairns (Cape Town, South Africa).
-    
+
     CURRENT CLIENT PROFILE (Already Authenticated):
     - Name: {st.session_state.user_data['name']}
     - Farm/Company: {st.session_state.user_data['farm']}
     - Location/Address: {st.session_state.user_data['location']}
     - Email: {st.session_state.user_data['email']}
 
+    CLIENT'S CURRENT BASKET (live, you CAN see this):
+    {basket_context()}
+
     INSTRUCTIONS:
     1. Ground your advice in the certified product catalog:
     {catalog_context}
     2. Never ask for their name or address again. Use their profile context automatically.
-    3. Proactively ask users if they want an official **Invoice** or a **QR Code for Payment/Quotation** whenever billing or order finalization is discussed.
-    4. Keep responses professional, clear, and actionable. Do not use emojis.
+    3. You can see the basket above. When the client says "from my basket" or "the basket", use those items and totals. Never ask them to re-list basket items.
+    4. You cannot send emails or generate files yourself. When the client wants an invoice or a QR code quotation, confirm the basket contents and total, then tell them a send button will appear below the chat to email it to {st.session_state.user_data['email']}. Never claim an email has already been sent.
+    5. Keep responses professional, clear, and actionable. Do not use emojis.
     """
 
     if not st.session_state.messages:
@@ -226,20 +464,22 @@ elif page_selection == "❖ CHAT":
         st.session_state.messages.append({"role": "user", "content": user_prompt})
 
         normalized_prompt = AgriculturalMiddleware.normalize_vernacular(user_prompt)
-        
+
         if not groq_client:
             st.error("SYSTEM ERROR: API connectivity offline.")
         else:
             try:
                 conversation_history = [{"role": "system", "content": USER_IDENTITY_PROMPT}]
-                for m in st.session_state.messages:
+                # all earlier turns as-is, latest user turn normalised for slang
+                for m in st.session_state.messages[:-1]:
                     conversation_history.append({"role": m["role"], "content": m["content"]})
-                
+                conversation_history.append({"role": "user", "content": normalized_prompt})
+
                 chat_completion = groq_client.chat.completions.create(
                     model="openai/gpt-oss-120b",
                     messages=conversation_history,
                     temperature=0.3,
-                    max_tokens=450
+                    max_tokens=900
                 )
                 reply = chat_completion.choices[0].message.content
                 with st.chat_message("assistant"):
@@ -248,9 +488,36 @@ elif page_selection == "❖ CHAT":
             except Exception as err:
                 st.error(f"Inference Engine Error: {err}")
 
-elif page_selection == "☷ CATALOGUE":
+    # ---- Send-document panel: appears when the conversation is about billing and the basket has items ----
+    _billing_words = ("invoice", "quote", "quotation", "qr", "email", "bill", "order")
+    _recent = " ".join(m["content"].lower() for m in st.session_state.messages[-3:])
+    _chat_items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
+    if _chat_items and any(w in _recent for w in _billing_words):
+        st.markdown("---")
+        st.markdown("<div class='section-header'>SEND DOCUMENT FROM BASKET</div>", unsafe_allow_html=True)
+        _, _, _gt = basket_totals()
+        st.caption(f"Basket total incl. VAT: R{_gt:.2f}. Will be sent to {st.session_state.user_data['email']}.")
+        chat_doc_type = st.radio(
+            "Document type", ["Official Invoice", "QR Code Quotation Summary"],
+            horizontal=True, key="chat_doc_type"
+        )
+        chat_phone = st.text_input("Contact number (optional)", key="chat_phone")
+        if st.button(f"SEND {chat_doc_type.upper()} TO {st.session_state.user_data['email'].upper()}", key="chat_send_btn"):
+            with st.spinner("Sending email..."):
+                result = generate_and_send(
+                    chat_doc_type,
+                    st.session_state.user_data["location"],
+                    chat_phone or "Not provided",
+                    st.session_state.user_data["email"]
+                )
+            if result["ok"]:
+                st.success(f"{chat_doc_type} emailed to {result['to']}.")
+            else:
+                st.error(f"{result['info']} The document is available on the RESERVE ORDER page to download.")
+
+elif page_selection == "CATALOGUE":
     st.markdown("<div class='section-header'>PRODUCT CATALOGUE & REAL-TIME BASKET</div>", unsafe_allow_html=True)
-    
+
     for row in catalog_data:
         p_name, p_cat, p_stock, p_price, p_guide = row[0], row[1], row[2], row[3], row[4]
         cols = st.columns([3, 1])
@@ -258,25 +525,23 @@ elif page_selection == "☷ CATALOGUE":
             st.markdown(f"**{p_name}** ({p_cat}) — **ZAR {p_price:.2f}** | Stock: {p_stock}")
             st.caption(f"Guideline: {p_guide}")
         with cols[1]:
-            current_qty = st.session_state.basket.get(p_name, 0)
-            # Use on_change / direct state update combined with rerun for instant real-time sidebar updates
-            qty = st.number_input("Qty", min_value=0, max_value=int(p_stock), value=current_qty, key=f"cat_{p_name}")
-            if qty != current_qty:
-                if qty > 0:
-                    st.session_state.basket[p_name] = qty
-                elif p_name in st.session_state.basket:
-                    del st.session_state.basket[p_name]
-                st.rerun()
+            key = f"cat_{p_name}"
+            if key not in st.session_state:
+                st.session_state[key] = int(st.session_state.basket.get(p_name, 0))
+            st.number_input(
+                "Qty", min_value=0, max_value=int(p_stock), step=1,
+                key=key, on_change=set_basket_qty, args=(p_name,)
+            )
         st.markdown("---")
 
-elif page_selection == "📝 RESERVE ORDER":
+elif page_selection == "RESERVE ORDER":
     st.markdown("<div class='section-header'>RESERVE ORDER & OFFICIAL QUOTATION</div>", unsafe_allow_html=True)
-    
+
     col1, col2 = st.columns(2)
     with col1:
         st.text_input("FARM / COMPANY", value=st.session_state.user_data["farm"], disabled=True)
         location_input = st.text_input("LOCATION / DELIVERY ADDRESS", value=st.session_state.user_data["location"])
-    
+
     with col2:
         st.text_input("CLIENT NAME", value=st.session_state.user_data["name"], disabled=True)
         email_input = st.text_input("EMAIL FOR QUOTATION", value=st.session_state.user_data["email"])
@@ -285,115 +550,64 @@ elif page_selection == "📝 RESERVE ORDER":
     doc_type = st.radio("SELECT DOCUMENT TYPE TO GENERATE:", ["Official Invoice", "QR Code Quotation Summary"], horizontal=True)
 
     st.markdown("### CURRENT BASKET ITEMS")
-    if not st.session_state.basket:
+    active_items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
+    if not active_items:
         st.warning("Your basket is empty. Add items from the Catalogue page.")
     else:
-        for item, qty in st.session_state.basket.items():
+        for item, qty in active_items:
             st.write(f"- {qty}x {item}")
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("PROCESS TRANSACTION & DISPATCH DOCUMENT"):
         if not phone or not email_input:
             st.error("Contact number and email are required to process the order and dispatch documentation.")
-        elif not st.session_state.basket:
+        elif not active_items:
             st.error("Cannot generate documentation with an empty basket.")
         else:
-            st.success(f"Transaction Recorded & {doc_type} Successfully Dispatched!")
-            
-            subtotal = 0.0
-            for prod, qty in st.session_state.basket.items():
-                price_row = [p[3] for p in catalog_data if p[0] == prod]
-                price = price_row[0] if price_row else 0.0
-                subtotal += (price * qty)
-            
-            tax_total = subtotal * 0.15
-            grand_total = subtotal + tax_total
+            generate_and_send(doc_type, location_input, phone, email_input)
 
-            # Simulated email dispatch with exact required subject header
-            st.markdown(f"""
-            <div class="email-preview-box">
-                <b>[SIMULATED OUTBOUND EMAIL DISPATCH]</b><br>
-                <b>TO:</b> {email_input}<br>
-                <b>SUBJECT: SEED2HARVEST ORDER INFORMATION</b><br>
-                ------------------------------------------------------------------<br>
-                Dear {st.session_state.user_data['name']},<br>
-                Please find attached your requested {doc_type.lower()} for your recent order at {st.session_state.user_data['farm']}.<br>
-                <b>Delivery Address:</b> {location_input}<br>
-                <b>Total Amount Payable:</b> R {grand_total:.2f} (Incl. 15% VAT)<br>
-                ------------------------------------------------------------------<br>
-                <i>Status: Dispatched Successfully via Seed2Harvest Mail Gateway.</i>
-            </div>
-            """, unsafe_allow_html=True)
+    # Persisted so it survives reruns (e.g. pressing the download button)
+    doc = st.session_state.last_document
+    if doc:
+        if doc["ok"]:
+            st.success(f"{doc['doc_type']} emailed to {doc['to']}.")
+        else:
+            st.error(f"{doc['info']} Your document was still generated below and can be downloaded.")
+        st.markdown(doc["doc_html"], unsafe_allow_html=True)
+        if doc["qr_png"]:
+            st.image(doc["qr_png"], width=180)
+        st.download_button(
+            "DOWNLOAD DOCUMENT (HTML)",
+            data=doc["email_html"].encode("utf-8"),
+            file_name=f"{doc['inv_no']}.html",
+            mime="text/html"
+        )
 
-            if doc_type == "Official Invoice":
-                st.markdown(f"""
-                <div class="quote-box">
-                    <b>SEED 2 HARVEST (PTY) LTD — OFFICIAL TAX INVOICE</b><br>
-                    123 Agricultural Way, Cape Town, 8001<br>
-                    support@seed2harvest.co.za | +27 21 555 0192<br>
-                    ------------------------------------------------------------------<br>
-                    <b>BILLED TO:</b> {st.session_state.user_data['name']} ({st.session_state.user_data['farm']})<br>
-                    <b>DELIVERY ADDRESS:</b> {location_input}<br>
-                    <b>CONTACT:</b> {phone} | {email_input}<br>
-                    <b>INVOICE NO:</b> #INV-2026-001 &nbsp;&nbsp;|&nbsp;&nbsp; <b>DATE:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}<br>
-                    ------------------------------------------------------------------<br>
-                    <b>DESCRIPTION &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; QTY &nbsp;&nbsp;&nbsp; UNIT PRICE &nbsp;&nbsp; TOTAL</b><br>
-                """, unsafe_allow_html=True)
-                for prod, qty in st.session_state.basket.items():
-                    price_row = [p[3] for p in catalog_data if p[0] == prod]
-                    price = price_row[0] if price_row else 0.0
-                    st.markdown(f"<span style='font-family:monospace;'>{prod:<35} {qty:<7} R{price:<11.2f} R{price*qty:.2f}</span>", unsafe_allow_html=True)
-                st.markdown(f"""
-                    ------------------------------------------------------------------<br>
-                    <b>SUBTOTAL:</b> R {subtotal:.2f}<br>
-                    <b>15% VAT:</b> R {tax_total:.2f}<br>
-                    <b>TOTAL DUE:</b> R {grand_total:.2f}<br>
-                    ------------------------------------------------------------------<br>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="quote-box">
-                    <b>SEED 2 HARVEST — QR CODE QUOTATION SUMMARY</b><br>
-                    <b>TO:</b> {email_input} | <b>TOTAL:</b> R {grand_total:.2f}<br>
-                    Scan the secure payment code below to settle quotation via mobile banking:
-                </div>
-                """, unsafe_allow_html=True)
-                
-                qr = qrcode.QRCode(version=1, box_size=5, border=2)
-                qr.add_data(f"PAYMENT: R{grand_total:.2f} REF: S2H-INV001")
-                qr.make(fit=True)
-                img = qr.make_image(fill_color="black", back_color="white")
-                buffered = BytesIO()
-                img.save(buffered, format="PNG")
-                st.image(buffered.getvalue(), width=180)
-
-elif page_selection == "⚙ GLOBAL FEED":
+elif page_selection == "GLOBAL FEED":
     st.markdown("<div class='section-header'>GLOBAL FEED, MAP EXTENSION & PORTAL QR</div>", unsafe_allow_html=True)
-    
+
     col_map, col_qr = st.columns(2)
-    
+
     with col_map:
-        st.markdown("### 🗺️ INTERACTIVE FARM MAP")
-        st.write(f"Delivery Location: **{st.session_state.user_data['location'] or 'Cape Town, South Africa'}**")
-        map_data = pd.DataFrame({
-            'lat': [-33.9249],
-            'lon': [18.4241]
-        })
-        st.map(map_data, zoom=10)
-        st.caption("Inspect operational coordinates in Western Cape.")
-        
+        st.markdown("### INTERACTIVE FARM MAP")
+        user_loc = st.session_state.user_data['location']
+        st.write(f"Delivery Location: **{user_loc or 'Cape Town, South Africa'}**")
+
+        result = geocode_location(user_loc)
+        if result:
+            lat, lon, resolved = result
+            st.caption(f"Matched: {resolved}")
+        else:
+            lat, lon = -33.9249, 18.4241
+            if user_loc:
+                st.warning("Could not find that location, showing Cape Town instead. Try a town or suburb name.")
+
+        st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}), zoom=10)
+
     with col_qr:
-        st.markdown("### 📱 OFFICIAL WEBSITE QR CODE")
+        st.markdown("### OFFICIAL WEBSITE QR CODE")
         st.write("Scan to visit **Seed 2 Harvest** portal:")
-        
-        qr = qrcode.QRCode(version=1, box_size=5, border=2)
-        qr.add_data("https://seed2harvest.co.za")
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        st.image(buffered.getvalue(), width=180)
+        st.image(make_qr_png("https://seed2harvest.co.za"), width=180)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
@@ -402,6 +616,18 @@ elif page_selection == "⚙ GLOBAL FEED":
     - **Persistence:** SQLite relational mapping (`orders`, `inventory`, `clients`).
     - **Compliance:** POPIA standards enforced on client data encapsulation.
     - **Inference Engine:** Groq LPU hardware routing to openai/gpt-oss-120b.
+    """)
+
+elif page_selection == "FEATURES":
+    st.markdown("<div class='section-header'>WHAT THIS APP CAN DO</div>", unsafe_allow_html=True)
+    render_features()
+
+    st.markdown("### HOW TO PLACE AN ORDER")
+    st.markdown("""
+    1. Open **CATALOGUE** and set quantities. Your basket fills in the sidebar.
+    2. Ask the **CHAT** agent for advice on dosage or what suits your crop.
+    3. Open **RESERVE ORDER**, enter your contact number and pick Invoice or QR Quotation.
+    4. Press **PROCESS TRANSACTION**. The document is emailed to you and can be downloaded.
     """)
 
 # ================= FOOTER =================
