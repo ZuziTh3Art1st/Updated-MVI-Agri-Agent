@@ -11,7 +11,7 @@ from io import BytesIO
 from groq import Groq
 import The_Database as db
 
-#  PAGE CONFIG & STYLING
+# ================= PAGE CONFIG & STYLING =================
 st.set_page_config(
     page_title="Seed 2 Harvest | Strategic Agent",
     layout="wide",
@@ -89,24 +89,8 @@ if "last_document" not in st.session_state: st.session_state.last_document = Non
 
 
 # ================= HELPERS =================
-# Banks shown as scannable QR codes on the quotation. Each QR opens that bank's website / online banking.
-BANKS = [
-    ("FNB", "https://www.fnb.co.za"),
-    ("Standard Bank", "https://www.standardbank.co.za"),
-    ("Absa", "https://www.absa.co.za"),
-    ("Nedbank", "https://www.nedbank.co.za"),
-    ("Capitec", "https://www.capitecbank.co.za"),
-]
-
-# Your banking details, shown under the QR codes and put in the email. Fill in the empty ones.
-# Empty values are left out, nothing is invented.
-BENEFICIARY = {
-    "Account name": "Seed 2 Harvest (Pty) Ltd",
-    "Bank": "",
-    "Account type": "",
-    "Account number": "",
-    "Branch code": "",
-}
+# Shown when the quotation QR code is scanned. Replace with your real banking details or a payment link.
+PAYMENT_INSTRUCTIONS = "Pay by EFT, use Ref as reference. Queries: support@seed2harvest.co.za"
 
 def get_secret(name, default=None):
     """Read from environment first, then Streamlit secrets."""
@@ -227,16 +211,6 @@ def clear_basket():
         del st.session_state[k]
 
 
-def payment_lines(inv_no, grand_total):
-    """Reference, amount and any filled-in banking details, as plain lines."""
-    lines = [f"Payment reference: {inv_no}", f"Amount to pay: R{grand_total:.2f}"]
-    filled = [(k, v) for k, v in BENEFICIARY.items() if v]
-    lines += [f"{k}: {v}" for k, v in filled]
-    if len(filled) <= 1:
-        lines.append("Full banking details: request from support@seed2harvest.co.za")
-    return lines
-
-
 def generate_and_send(doc_type, location_input, phone, email_input):
     """Build the invoice / QR quotation from the live basket, email it, and store it for display."""
     active_items = [(p, q) for p, q in st.session_state.basket.items() if q > 0]
@@ -254,9 +228,7 @@ def generate_and_send(doc_type, location_input, phone, email_input):
         f"  {q}x {p} @ R{price_map.get(p, 0.0):.2f} = R{price_map.get(p, 0.0) * q:.2f}" for p, q in active_items
     )
 
-    bank_qrs = []
-    pay_list = payment_lines(inv_no, grand_total)
-    pay_html = "<br>".join(html.escape(l) for l in pay_list)
+    qr_png = None
     if doc_type == "Official Invoice":
         doc_html = f"""
         <div class="quote-box">
@@ -276,7 +248,18 @@ def generate_and_send(doc_type, location_input, phone, email_input):
             <b>TOTAL DUE:</b> R {grand_total:.2f}
         </div>"""
     else:
-        bank_qrs = [(name, url, make_qr_png(url, box_size=6)) for name, url in BANKS]
+        qr_lines = [
+            "SEED 2 HARVEST - QUOTATION",
+            f"Ref: {inv_no}",
+        ]
+        qr_lines += [f"{q}x {p} = R{price_map.get(p, 0.0) * q:.2f}" for p, q in active_items]
+        qr_lines += [
+            f"Subtotal: R{subtotal:.2f}",
+            f"VAT 15%: R{tax_total:.2f}",
+            f"TOTAL DUE: R{grand_total:.2f}",
+            PAYMENT_INSTRUCTIONS,
+        ]
+        qr_png = make_qr_png("\n".join(qr_lines), box_size=6)
         doc_html = f"""
         <div class="quote-box">
             <b>SEED 2 HARVEST — QR CODE QUOTATION SUMMARY</b><br>
@@ -285,9 +268,8 @@ def generate_and_send(doc_type, location_input, phone, email_input):
                 <tr><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th>TOTAL</th></tr>
                 {rows_html}
             </table>
-            <b>TOTAL (incl. 15% VAT):</b> R {grand_total:.2f}<br><br>
-            <b>PAYMENT DETAILS</b><br>{pay_html}<br>
-            Scan your bank's QR code below to open your bank, log in, then choose Pay / Pay beneficiary and enter the details above.
+            <b>TOTAL (incl. 15% VAT):</b> R {grand_total:.2f}<br>
+            Scan the code below with your phone camera to see this quotation and the payment reference.
         </div>"""
 
     email_html = f"""
@@ -300,7 +282,6 @@ def generate_and_send(doc_type, location_input, phone, email_input):
       {rows_html}
     </table>
     <p>Subtotal: R{subtotal:.2f}<br>VAT (15%): R{tax_total:.2f}<br><b>Total payable: R{grand_total:.2f}</b></p>
-    <p><b>Payment details</b><br>{pay_html}</p>
     <p>Regards,<br>Seed 2 Harvest<br>support@seed2harvest.co.za</p>
     </body></html>"""
 
@@ -309,8 +290,7 @@ def generate_and_send(doc_type, location_input, phone, email_input):
         f"Your {doc_type.lower()} for {st.session_state.user_data['farm']}.\n"
         f"Reference: {inv_no}\nDate: {date_str}\nDelivery: {location_input}\n\n"
         f"{rows_text}\n\nSubtotal: R{subtotal:.2f}\nVAT (15%): R{tax_total:.2f}\n"
-        f"Total payable: R{grand_total:.2f}\n\n"
-        + "PAYMENT DETAILS\n" + "\n".join(pay_list) + "\n\nSeed 2 Harvest"
+        f"Total payable: R{grand_total:.2f}\n\nSeed 2 Harvest"
     )
 
     # Opens the person's own email app with the message filled in. No account or API key needed.
@@ -330,7 +310,7 @@ def generate_and_send(doc_type, location_input, phone, email_input):
     )
 
     st.session_state.last_document = {
-        "doc_html": doc_html, "bank_qrs": bank_qrs, "inv_no": inv_no, "email_html": email_html,
+        "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no, "email_html": email_html,
         "to": email_input, "doc_type": doc_type, "mailto": mailto_url, "gmail": gmail_url, "email_text": email_text
     }
     return st.session_state.last_document
@@ -605,14 +585,8 @@ elif page_selection == "RESERVE ORDER":
     if doc:
         render_email_status(doc)
         st.markdown(doc["doc_html"], unsafe_allow_html=True)
-        if doc["bank_qrs"]:
-            st.markdown("**SCAN TO OPEN YOUR BANK**")
-            qr_cols = st.columns(len(doc["bank_qrs"]))
-            for col, (bank_name, bank_url, bank_png) in zip(qr_cols, doc["bank_qrs"]):
-                with col:
-                    st.image(bank_png, width=150)
-                    st.markdown(f"**{bank_name}**  \n[Open site]({bank_url})")
-            st.caption("Banks do not allow a public link that opens a pre-filled payment, so each code opens the bank. Log in, choose Pay, and use the reference and amount shown above.")
+        if doc["qr_png"]:
+            st.image(doc["qr_png"], width=260)
         st.download_button(
             "DOWNLOAD DOCUMENT (HTML)",
             data=doc["email_html"].encode("utf-8"),
