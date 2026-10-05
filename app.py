@@ -287,18 +287,34 @@ def generate_and_send(doc_type, location_input, phone, email_input):
         f"&body={quote(email_text[:1500])}"
     )
 
+    gmail_url = (
+        "https://mail.google.com/mail/?view=cm&fs=1"
+        f"&to={quote(email_input)}"
+        f"&cc={quote('support@seed2harvest.co.za')}"
+        f"&su={quote('SEED2HARVEST ORDER INFORMATION')}"
+        f"&body={quote(email_text[:1200])}"
+    )
+
     st.session_state.last_document = {
         "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no, "email_html": email_html,
-        "to": email_input, "doc_type": doc_type, "mailto": mailto_url
+        "to": email_input, "doc_type": doc_type, "mailto": mailto_url, "gmail": gmail_url, "email_text": email_text
     }
     return st.session_state.last_document
 
 
 def render_email_status(doc):
-    """Offer the open-in-email-app button for the generated document."""
-    st.success(f"{doc['doc_type']} ready. Press the button below to send it from your own email app.")
-    st.markdown(f"<a class='mailto-btn' href='{doc['mailto']}'>OPEN IN YOUR EMAIL APP</a>", unsafe_allow_html=True)
-    st.caption(f"Opens a ready-written email to {doc['to']} with Seed 2 Harvest support copied in. Press send in your email app to finish.")
+    """Offer ways to send the generated document from the person's own email."""
+    st.success(f"{doc['doc_type']} ready. Choose how you want to send it.")
+    # target=_blank is required: Streamlit runs inside a frame, so a plain mailto: link turns the page blank.
+    st.markdown(
+        f"<a class='mailto-btn' href='{doc['gmail']}' target='_blank' rel='noopener noreferrer'>OPEN IN GMAIL</a> &nbsp; "
+        f"<a class='mailto-btn' href='{doc['mailto']}' target='_blank' rel='noopener noreferrer'>OPEN IN OTHER EMAIL APP</a>",
+        unsafe_allow_html=True
+    )
+    st.caption(f"Opens a ready-written email to {doc['to']} with Seed 2 Harvest support copied in. Press send to finish.")
+    with st.expander("Or copy the email text yourself"):
+        st.caption("To: " + doc["to"] + "  |  Cc: support@seed2harvest.co.za  |  Subject: SEED2HARVEST ORDER INFORMATION")
+        st.code(doc["email_text"], language=None)
 
 
 # ================= SIDEBAR NAVIGATION & REAL-TIME BASKET =================
