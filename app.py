@@ -3,6 +3,7 @@ import re
 import ssl
 import html
 import base64
+from urllib.parse import quote
 import smtplib
 import requests
 import streamlit as st
@@ -59,6 +60,12 @@ st.markdown("""
     .quote-box table { width: 100%; border-collapse: collapse; margin: 10px 0; }
     .quote-box th { text-align: left; color: #c69c6d; border-bottom: 1px solid #444; padding: 4px; }
     .quote-box td { padding: 4px; border-bottom: 1px solid #2a2d33; }
+
+    a.mailto-btn {
+        display: inline-block; background-color: #c69c6d; color: #000000 !important; text-decoration: none !important;
+        padding: 10px 18px; border-radius: 4px; font-weight: 700; letter-spacing: 1px; font-size: 0.85rem; margin: 6px 0 12px 0;
+    }
+    a.mailto-btn:hover { background-color: #e0b784; }
 
     .feature-card {
         background-color: #16181c; border: 1px solid #333; border-left: 3px solid #c69c6d;
@@ -356,14 +363,39 @@ def generate_and_send(doc_type, location_input, phone, email_input):
         f"Total payable: R{grand_total:.2f}\n\nSeed 2 Harvest"
     )
 
-    with st.spinner("Sending email..."):
-        ok, info = send_email(email_input, "SEED2HARVEST ORDER INFORMATION", email_html, email_text, qr_png)
+    configured = bool(get_secret("BREVO_API_KEY")) or bool(get_secret("SMTP_USER") and get_secret("SMTP_PASSWORD"))
+    if configured:
+        with st.spinner("Sending email..."):
+            ok, info = send_email(email_input, "SEED2HARVEST ORDER INFORMATION", email_html, email_text, qr_png)
+    else:
+        ok, info = False, "NOT_CONFIGURED"
+
+    # Fallback that needs no account or key: opens the person's own email app with the message filled in.
+    mailto_url = (
+        f"mailto:{quote(email_input)}"
+        f"?cc={quote('support@seed2harvest.co.za')}"
+        f"&subject={quote('SEED2HARVEST ORDER INFORMATION')}"
+        f"&body={quote(email_text[:1500])}"
+    )
 
     st.session_state.last_document = {
-        "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no,
-        "email_html": email_html, "ok": ok, "info": info, "to": email_input, "doc_type": doc_type
+        "doc_html": doc_html, "qr_png": qr_png, "inv_no": inv_no, "email_html": email_html,
+        "ok": ok, "info": info, "to": email_input, "doc_type": doc_type, "mailto": mailto_url
     }
     return st.session_state.last_document
+
+
+def render_email_status(doc):
+    """Show whether the email went out, and offer the open-in-email-app fallback when it did not."""
+    if doc["ok"]:
+        st.success(f"{doc['doc_type']} emailed to {doc['to']}.")
+        return
+    if doc["info"] == "NOT_CONFIGURED":
+        st.info("Automatic email sending is not switched on for this app. Use the button below to send it from your own email app, or download the document.")
+    else:
+        st.error(f"{doc['info']} You can still send it from your own email app with the button below.")
+    st.markdown(f"<a class='mailto-btn' href='{doc['mailto']}'>OPEN IN YOUR EMAIL APP</a>", unsafe_allow_html=True)
+    st.caption(f"Opens a ready-written email to {doc['to']} with Seed 2 Harvest support copied in. Press send in your email app to finish.")
 
 
 # ================= SIDEBAR NAVIGATION & REAL-TIME BASKET =================
@@ -561,10 +593,9 @@ elif page_selection == "CHAT":
                     chat_phone or "Not provided",
                     st.session_state.user_data["email"]
                 )
-            if result["ok"]:
-                st.success(f"{chat_doc_type} emailed to {result['to']}.")
-            else:
-                st.error(f"{result['info']} The document is available on the RESERVE ORDER page to download.")
+            render_email_status(result)
+            if not result["ok"]:
+                st.caption("The full document can be downloaded on the RESERVE ORDER page.")
 
 elif page_selection == "CATALOGUE":
     st.markdown("<div class='section-header'>PRODUCT CATALOGUE & REAL-TIME BASKET</div>", unsafe_allow_html=True)
@@ -620,10 +651,7 @@ elif page_selection == "RESERVE ORDER":
     # Persisted so it survives reruns (e.g. pressing the download button)
     doc = st.session_state.last_document
     if doc:
-        if doc["ok"]:
-            st.success(f"{doc['doc_type']} emailed to {doc['to']}.")
-        else:
-            st.error(f"{doc['info']} Your document was still generated below and can be downloaded.")
+        render_email_status(doc)
         st.markdown(doc["doc_html"], unsafe_allow_html=True)
         if doc["qr_png"]:
             st.image(doc["qr_png"], width=180)
