@@ -159,7 +159,42 @@ def load_banner_html(path="images/maxresdefault.jpg"):
         return "<div class='hero-placeholder'></div>"
 
 
-def send_email(to_addr, subject, html_body, text_body, qr_png=None):
+def send_email_brevo(to_addr, subject, html_body, text_body, qr_png=None):
+    """Send over HTTPS using the Brevo API (works on hosts that block SMTP)."""
+    api_key = get_secret("BREVO_API_KEY")
+    sender_email = get_secret("BREVO_SENDER_EMAIL")
+    sender_name = get_secret("BREVO_SENDER_NAME", "Seed 2 Harvest")
+    if not api_key or not sender_email:
+        return False, "Brevo is not configured. Add BREVO_API_KEY and BREVO_SENDER_EMAIL to your Streamlit secrets."
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_addr}],
+        "subject": subject,
+        "htmlContent": html_body,
+        "textContent": text_body,
+    }
+    if qr_png:
+        payload["attachment"] = [{"name": "payment_qr.png", "content": base64.b64encode(qr_png).decode()}]
+
+    try:
+        r = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": api_key, "accept": "application/json", "content-type": "application/json"},
+            json=payload, timeout=20
+        )
+        if r.status_code in (200, 201, 202):
+            return True, "Sent"
+        try:
+            detail = r.json().get("message", r.text)
+        except Exception:
+            detail = r.text
+        return False, f"Brevo rejected the email ({r.status_code}): {detail}"
+    except Exception as e:
+        return False, f"Email failed: {e}"
+
+
+def send_email_smtp(to_addr, subject, html_body, text_body, qr_png=None):
     """Send via SMTP. Returns (ok: bool, message: str)."""
     host = get_secret("SMTP_HOST", "smtp.gmail.com")
     port = int(get_secret("SMTP_PORT", 465))
@@ -168,7 +203,7 @@ def send_email(to_addr, subject, html_body, text_body, qr_png=None):
     sender = get_secret("SMTP_SENDER", user)
 
     if not user or not password:
-        return False, "Email is not configured. Add SMTP_USER and SMTP_PASSWORD to your Streamlit secrets."
+        return False, "Email is not configured. Add BREVO_API_KEY (recommended) or SMTP_USER and SMTP_PASSWORD to your Streamlit secrets."
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -194,6 +229,13 @@ def send_email(to_addr, subject, html_body, text_body, qr_png=None):
         return False, "SMTP login failed. For Gmail you must use an App Password, not your normal password."
     except Exception as e:
         return False, f"Email failed: {e}"
+
+
+def send_email(to_addr, subject, html_body, text_body, qr_png=None):
+    """Use Brevo (HTTPS) when configured, otherwise fall back to SMTP."""
+    if get_secret("BREVO_API_KEY"):
+        return send_email_brevo(to_addr, subject, html_body, text_body, qr_png)
+    return send_email_smtp(to_addr, subject, html_body, text_body, qr_png)
 
 
 # ================= GROQ CLIENT SETUP =================
