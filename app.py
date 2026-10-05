@@ -58,6 +58,7 @@ st.markdown("""
     .quote-box th { text-align: left; color: #c69c6d; border-bottom: 1px solid #444; padding: 4px; }
     .quote-box td { padding: 4px; border-bottom: 1px solid #2a2d33; }
 
+    [data-testid="stForm"] { border: none !important; padding: 0 !important; }
     a.mailto-btn {
         display: inline-block; background-color: #c69c6d; color: #000000 !important; text-decoration: none !important;
         padding: 10px 18px; border-radius: 4px; font-weight: 700; letter-spacing: 1px; font-size: 0.85rem; margin: 6px 0 12px 0;
@@ -429,7 +430,7 @@ if not st.session_state.authenticated:
     col_form, _ = st.columns([2, 1])
     with col_form:
         # st.form submits every field's current value in one go, so browser autofill is captured.
-        with st.form("onboarding_form", clear_on_submit=False, border=False):
+        with st.form("onboarding_form", clear_on_submit=False):
             client_name = st.text_input("NAME", key="onboard_name")
             client_farm = st.text_input("FARM / COMPANY", key="onboard_farm")
             client_location = st.text_input("LOCATION", key="onboard_loc")
